@@ -1,0 +1,11 @@
+.DS_Store
+/build/
+*.app/
+draft.json
+*.png
+*.jpg
+*.jpeg
+*.heic
+*.webp
+*.glb
+*.usdz

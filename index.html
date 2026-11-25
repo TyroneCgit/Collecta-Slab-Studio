@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' blob: data:; font-src 'self'; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
+<title>Slab Studio 2</title>
+<link rel="stylesheet" href="studio.css">
+</head>
+<body>
+<header class="appbar">
+  <div class="wordmark"><svg class="brand" viewBox="0 0 40 40" aria-hidden="true"><g transform="rotate(-19 20 20)" stroke="currentColor" stroke-width="2.4" fill="none" stroke-linejoin="round"><rect x="6" y="11" width="17" height="24" rx="2.5" fill="#202123"/><rect x="12" y="7" width="17" height="24" rx="2.5" fill="#202123"/><rect x="18" y="3" width="17" height="24" rx="2.5" fill="#202123"/><path d="M21.5 10h10"/></g></svg><span>Slab Studio 2</span></div>
+  <span class="app-sep"></span><span class="doc-name" id="document-name">Untitled slab</span>
+  <div class="bar-actions"><span class="save-state" id="save-status" role="status"><i></i><span>Local workspace</span></span>
+  <div class="export-actions">
+    <button class="primary" id="export-xcode" title="Save a USDZ model for Xcode and Apple Quick Look" disabled><span data-icon="export"></span><span id="xcode-caption">Export for Xcode</span></button>
+    <button class="primary" id="export-open" title="More export formats" aria-label="More export formats" aria-haspopup="dialog" disabled><span data-icon="chevron"></span></button>
+  </div></div>
+</header>
+<main class="workspace">
+<section class="view-column" aria-label="3D viewport">
+  <div class="stage" id="stage">
+    <canvas id="scene" tabindex="0" aria-label="Rotatable 3D card holder. Drag or use the arrow keys to rotate. Use plus and minus to zoom."></canvas>
+    <div class="stage-tag"><span data-icon="cube"></span><span>3D viewport</span></div>
+    <div class="zoom-control"><button id="zoom-out" aria-label="Zoom out" title="Zoom out (−)"><span data-icon="minus"></span></button><button id="zoom-reset" title="Reset zoom"><output id="zoom-value">100%</output></button><button id="zoom-in" aria-label="Zoom in" title="Zoom in (+)"><span data-icon="plus"></span></button></div>
+    <div class="stage-message" id="stage-message" role="status">Preparing the holder…</div>
+    <svg class="axis" viewBox="0 0 64 64" aria-label="Orientation axes" id="axis"></svg>
+    <div class="view-tools" aria-label="Camera views">
+      <span class="tool-glyph" data-icon="orbit"></span><span class="tool-rule"></span>
+      <button data-view="front" title="Front view (1)">Front</button>
+      <button data-view="angle" class="active" title="Three-quarter view (2)">¾ view</button>
+      <button data-view="back" title="Back view (3)">Back</button>
+      <span class="tool-rule"></span><button class="spin" id="spin" aria-label="Start turntable" aria-pressed="false" title="Start turntable"><span data-icon="play"></span></button>
+    </div>
+  </div>
+  <footer class="stage-foot"><span><span data-icon="mouse"></span>Drag to rotate</span><span><span data-icon="zoom"></span>Scroll to zoom</span><span class="camera-label" id="pose-readout">Perspective</span></footer>
+</section>
+<aside class="editor" aria-label="Slab editor">
+  <div class="editor-top"><div class="inspector-title"><h1>Slab editor</h1><span data-icon="sliders"></span></div>
+    <div class="tabs" aria-label="Editor panels"><button class="selected" id="tab-card" aria-pressed="true" aria-controls="panel-card"><span data-icon="card"></span>Card</button><button id="tab-scene" aria-pressed="false" aria-controls="panel-scene"><span data-icon="sun"></span>Scene</button></div>
+  </div>
+  <div class="panel-scroll">
+  <div id="panel-card">
+    <section class="group art-group"><h2>Card artwork</h2>
+      <div class="art-pair">
+        <button class="art-tile" data-side="front" aria-label="Choose front artwork"><span class="thumb-stage front-tile"><img id="thumb-front" alt=""></span><span class="tile-caption">Front<span data-icon="upload"></span></span></button>
+        <button class="art-tile" data-side="back" aria-label="Choose back artwork"><span class="thumb-stage back-tile"><img id="thumb-back" alt=""></span><span class="tile-caption">Back<span data-icon="upload"></span></span></button>
+      </div>
+      <div class="card-fit">
+        <div class="fit-heading"><h3>Card fit</h3><button id="reset-card-fit" type="button" disabled>Reset fit</button></div>
+        <label class="range-label" for="card-inset">Edge trim <output id="inset-value" for="card-inset">0.0 mm</output>
+          <input type="range" id="card-inset" min="0" max="2" step="0.1" value="0"></label>
+        <label class="range-label" for="card-radius">Corner radius <output id="radius-value" for="card-radius">2.2 mm</output>
+          <input type="range" id="card-radius" min="0" max="6" step="0.1" value="2.2"></label>
+      </div>
+      <div class="qr-row">
+        <span class="qr-symbol" data-icon="qr" id="qr-symbol"></span><strong>Rear label QR</strong>
+        <button class="qr-pick" data-side="qr" id="qr-pick">Add image</button><button class="qr-remove icon-button" id="qr-remove" aria-label="Remove QR image" title="Remove QR image" hidden><span data-icon="close"></span></button>
+      </div>
+      <input id="image-picker" type="file" accept="image/png,image/jpeg,image/webp,image/avif,image/gif" hidden>
+    </section>
+    <section class="group label-group"><h2>Grading label</h2>
+      <div class="fields">
+        <div class="field-row identification"><label>Year &amp; set<input data-field="yearSet" maxlength="72" autocomplete="off"></label><label>Card no.<input data-field="cardNumber" maxlength="20" autocomplete="off"></label></div>
+        <label>Card name<input data-field="title" maxlength="72" autocomplete="off"></label>
+        <label>Variation<input data-field="variation" maxlength="72" autocomplete="off"></label>
+        <div class="field-row"><label>Condition<input data-field="gradeText" maxlength="24" autocomplete="off"></label><label>Grade<input data-field="grade" maxlength="8" autocomplete="off"></label></div>
+        <label>Serial number<input data-field="serial" maxlength="28" class="mono" autocomplete="off"></label>
+      </div>
+    </section>
+  </div>
+  <div id="panel-scene" hidden>
+    <section class="group"><h2>Studio lighting</h2><div class="light-options">
+      <button class="light-option" data-light="softbox"><i class="light-preview softbox"></i><b>Softbox</b><span>A broad, soft reflection</span><i class="check" data-icon="check"></i></button>
+      <button class="light-option" data-light="raking"><i class="light-preview raking"></i><b>Strip light</b><span>A narrow edge highlight</span><i class="check" data-icon="check"></i></button>
+      <button class="light-option" data-light="daylight"><i class="light-preview daylight"></i><b>Daylight</b><span>A large window reflection</span><i class="check" data-icon="check"></i></button>
+    </div><label class="range-label">Light intensity <output id="light-value"></output><input type="range" id="strength" min="45" max="155" step="1"></label></section>
+    <section class="group"><h2>Backdrop</h2><div class="swatches">
+      <button data-backdrop="pearl"><i class="pearl"></i>Pearl</button><button data-backdrop="slate"><i class="slate"></i>Slate</button><button data-backdrop="sand"><i class="sand"></i>Sand</button>
+    </div></section>
+    <section class="group"><h2>Orientation</h2><div class="angles">
+      <label class="range-label">Yaw<output id="yaw-value"></output><input id="yaw" type="range" min="-180" max="180" step="1"></label>
+      <label class="range-label">Pitch<output id="pitch-value"></output><input id="pitch" type="range" min="-90" max="90" step="1"></label>
+      <label class="range-label">Roll<output id="roll-value"></output><input id="roll" type="range" min="-180" max="180" step="1"></label>
+    </div><button class="secondary reset" id="reset-scene"><span data-icon="reset"></span>Reset scene</button></section>
+  </div>
+  </div>
+</aside>
+</main>
+<dialog id="export-dialog" aria-labelledby="export-heading"><form id="export-form">
+  <div class="dialog-heading"><h2 id="export-heading">Export asset</h2><button type="button" id="export-close" class="icon-button" aria-label="Close export"><span data-icon="close"></span></button></div>
+  <div class="export-tabs"><label><input type="radio" name="format" value="usdz" checked><span>Xcode · USDZ</span></label><label><input type="radio" name="format" value="glb"><span>3D · GLB</span></label><label><input type="radio" name="format" value="png"><span>Image · PNG</span></label></div>
+  <div id="png-options" hidden><label class="select-label">Resolution<select id="resolution"><option value="1200">1200 × 1500 px</option><option value="2400" selected>2400 × 3000 px</option><option value="3200">3200 × 4000 px</option></select></label><label class="checkbox"><input type="checkbox" id="transparent">Transparent background</label></div>
+  <p id="usdz-description">Drag the saved USDZ into your Xcode project and select your app target. Both card faces and grading labels are included.</p>
+  <p id="glb-description" hidden>A GLB model with the holder, both card faces, and the grading label. Textures are embedded.</p>
+  <p id="export-error" role="alert" hidden></p>
+  <div class="export-footer"><span id="format-note">Apple 3D model</span><button class="primary" id="export-save" type="submit"><span data-icon="export"></span><span id="save-caption">Save USDZ…</span></button></div>
+</form></dialog>
+<div id="toast" role="status" hidden><span id="toast-message"></span><button type="button" id="reveal-export" hidden>Show in Finder</button></div>
+<script src="artwork.js"></script><script src="renderer.js"></script><script src="usdz.js"></script><script src="studio.js"></script>
+</body></html>
