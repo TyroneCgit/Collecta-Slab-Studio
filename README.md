@@ -1,6 +1,6 @@
 # Slab Studio 3
 
-A local graded-card editor for macOS and the browser. Add front and back artwork, edit the grading label, and adjust the edge trim and corner radius in the live 3D preview. A procedurally drawn demo card is included.
+A local graded-card editor for macOS and the browser. Each slab starts with a red-bordered PSA-style front label and a charcoal reverse label with the serial and barcode. Add front and back card artwork, edit the label fields, and adjust the edge trim and corner radius in the live 3D preview. A procedurally drawn demo card is included.
 
 The v3 case has polished glass bevels and a slight aqua tint through its thick edges. The v3 desktop app keeps a separate local draft from Studio 2.
 

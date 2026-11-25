@@ -2,7 +2,7 @@
   "use strict";
   const defaults = Object.freeze({
     yearSet: "Fold Studies", title: "Helix Fold", cardNumber: "F-14",
-    variation: "Ultramarine", gradeText: "Proof", grade: "A", serial: "FS14027"
+    variation: "Ultramarine", gradeText: "MINT", grade: "9", serial: "FS14027"
   });
   const ink = "#13252f", blue = "#3256ce", saffron = "#f5b653", paper = "#f6f0e3";
   let frontPaper, backPaper, sampleCards;
@@ -46,6 +46,56 @@
     ctx.restore();
   }
 
+  // PSA wordmark from the public Original Photograph Submission Form.
+  // https://www.psacard.com/services/originalphotoauthentication
+  const psaOuterLetters = new Path2D(`
+    M 25.69 14.77 C 25.69 16.5 24.89 17.87 22.8 17.87 L 8.93 17.87 L 8.93 10.55 L 22.03 10.55
+    C 24.73 10.55 25.69 11.68 25.69 13.65 Z M 34.47 19.06 C 31.57 18.41 29.7 17.2 29.7 14.09
+    C 29.7 13.22 29.92 11.94 30.34 10.37 C 30.94 8.19 31.49 6.98 32.59 5.96
+    C 30.99 4.3 28.41 3.32 24.32 3.32 L 0 3.32 L 0 32.43 L 8.93 32.43 L 8.93 25.11 L 26.66 25.11
+    C 31.39 25.11 33.64 22.3 34.47 19.06 M 65.52 21 L 71.15 10.07 L 76.94 21 Z M 76.98 3.32
+    L 65.36 3.32 L 56.52 19.65 C 58.11 20.73 58.96 22.27 58.96 24.15
+    C 58.96 27.54 56.92 30.35 53.21 32.43 L 59.57 32.43 L 62.18 27.28 L 80.28 27.28 L 83.05 32.43
+    L 92.98 32.43 Z M 76.98 3.32 M 94.77 31.82 L 94.89 31.82 C 95.02 31.82 95.12 31.78 95.12 31.67
+    C 95.12 31.57 95.06 31.51 94.9 31.51 C 94.84 31.51 94.8 31.52 94.77 31.52 Z M 94.77 32.41
+    L 94.52 32.41 L 94.52 31.37 C 94.62 31.35 94.75 31.34 94.92 31.34
+    C 95.12 31.34 95.21 31.37 95.29 31.41 C 95.34 31.46 95.39 31.54 95.39 31.64
+    C 95.39 31.76 95.3 31.85 95.17 31.89 L 95.17 31.9 C 95.27 31.94 95.33 32.01 95.36 32.15
+    C 95.39 32.31 95.41 32.38 95.44 32.41 L 95.18 32.41 C 95.14 32.38 95.12 32.28 95.09 32.16
+    C 95.07 32.05 95.01 32 94.88 32 L 94.77 32 Z M 94.12 31.87 C 94.12 32.33 94.46 32.7 94.94 32.7
+    C 95.39 32.7 95.73 32.33 95.73 31.88 C 95.73 31.41 95.39 31.03 94.93 31.03
+    C 94.46 31.03 94.12 31.41 94.12 31.87 M 96 31.87 C 96 32.46 95.54 32.93 94.93 32.93
+    C 94.33 32.93 93.85 32.46 93.85 31.87 C 93.85 31.29 94.33 30.82 94.93 30.82
+    C 95.54 30.82 96 31.29 96 31.87`);
+  const psaMiddleLetter = new Path2D(`
+    M 55.39 6.96 C 49.62 7.38 46.57 7.95 43.01 9.13 C 39.45 10.37 36.56 12.28 36.56 13.41
+    C 36.56 13.93 37.13 14.39 38.21 14.75 C 39.35 15.12 40.33 15.38 41.1 15.53 L 46.52 16.77
+    C 49.77 17.49 53.12 18.73 55.09 19.97 C 56.69 20.95 57.51 22.39 57.51 24.14
+    C 57.51 31.32 47.66 35.81 31.77 35.81 C 26.61 35.81 24.02 34.88 24.02 32.97
+    C 24.02 32.3 24.54 31.27 25.62 29.67 C 26.45 28.53 26.91 28.12 27.74 27.86
+    C 31.14 26.78 30.73 26.88 31.09 26.88 C 31.35 26.88 31.45 26.98 31.45 27.24
+    C 31.45 27.55 31.35 27.66 30.89 28.02 L 29.7 28.89 C 31.25 28.95 32.8 29 33.21 29
+    C 39.97 29 45.34 28.02 49.88 25.95 C 51.89 25.07 52.71 24.41 52.71 23.73
+    C 52.71 23.06 51.99 22.5 50.13 21.77 C 48.43 21.1 46.26 20.48 44.92 20.23 L 36.41 18.68
+    C 32.59 18.01 31.14 16.77 31.14 14.09 C 31.14 13.31 31.35 12.07 31.77 10.52
+    C 32.64 7.32 33.36 6.39 36 4.9 C 41.52 1.75 48.43 0 54.98 0 C 57.05 0 59.27 0.26 61.33 0.72
+    C 62.46 0.93 62.67 1.24 62.67 2.53 C 62.67 4.02 62.21 5.78 61.54 6.55
+    C 60.97 7.32 60.71 7.48 58.34 8.3 C 56.84 8.82 56.22 9.18 53.75 10.84
+    C 53.18 11.2 52.87 11.35 52.51 11.35 C 52.09 11.35 51.68 10.99 51.68 10.63
+    C 51.68 10.32 51.79 10.11 52.3 9.7 Z M 55.39 6.96`);
+
+  function drawPSA(ctx, x, centerY, width, singleColor) {
+    const scale = width / 96;
+    ctx.save();
+    ctx.translate(x,centerY - 35.8086 * scale / 2);
+    ctx.scale(scale,scale);
+    ctx.fillStyle = singleColor || "#0050a2";
+    ctx.fill(psaOuterLetters);
+    ctx.fillStyle = singleColor || "#eb1c2d";
+    ctx.fill(psaMiddleLetter);
+    ctx.restore();
+  }
+
   // The insert's metalized dies are registered to these two polygons in the 3D model.
   function foil(ctx, rear) {
     ctx.save();
@@ -59,33 +109,57 @@
     const x = rear ? 614 : 670, y = rear ? 0 : 316;
     const w = rear ? 308 : 204, h = rear ? 261 : 132;
     const foilInk = ctx.createLinearGradient(x,y,x+w,y+h);
-    foilInk.addColorStop(0, "#9caab1");
-    foilInk.addColorStop(.32, "#f3ebce");
-    foilInk.addColorStop(.56, "#bbd3d7");
-    foilInk.addColorStop(1, "#c6bcae");
+    foilInk.addColorStop(0, "#a7a6aa");
+    foilInk.addColorStop(.32, "#eae3d6");
+    foilInk.addColorStop(.56, "#c3cdd4");
+    foilInk.addColorStop(1, "#b3a8ac");
     ctx.fillStyle = foilInk; ctx.fillRect(x,y,w,h);
     for (let offset = -h; offset < w; offset += 8) {
-      rule(ctx,x+offset,y,x+offset+h,y+h,"rgba(255,255,255,.45)");
+      rule(ctx,x+offset,y,x+offset+h,y+h,"rgba(255,255,255,.38)");
+      rule(ctx,x+offset,y+h,x+offset+h,y,"rgba(111,104,126,.16)");
     }
-    foldMark(ctx,x+w/2,y+h*(rear ? .44 : .5),rear ? 2 : 1.25,ink);
+    drawPSA(ctx,x+w*.07,y+h*(rear ? .39 : .47),w*.86);
+    ctx.restore();
+  }
+
+  function frontLabelPaper(ctx) {
+    const trim = ctx.createLinearGradient(0,0,1536,448);
+    trim.addColorStop(0,"#dd0e22");trim.addColorStop(.52,"#d90e23");trim.addColorStop(1,"#c5091c");
+    ctx.fillStyle=trim;ctx.fillRect(0,0,1536,448);
+    ctx.save();
+    ctx.beginPath();ctx.rect(32,51,1472,344);ctx.clip();
+    const wash=ctx.createLinearGradient(0,64,96,430);
+    wash.addColorStop(0,"#e9f3f2");wash.addColorStop(.52,"#f6f9f4");wash.addColorStop(1,"#f5fbf8");
+    ctx.fillStyle=wash;ctx.fillRect(32,51,1472,344);
+    ctx.strokeStyle="rgba(118,170,182,.21)";ctx.lineWidth=1;
+    for(let base=32;base<=424;base+=5.5){
+      ctx.beginPath();
+      for(let x=32;x<=1504;x+=4){
+        const y=base+9*Math.sin(x*.009+base*.016)+4*Math.sin(x*.027-base*.023);
+        if(x===32)ctx.moveTo(x,y);else ctx.lineTo(x,y);
+      }
+      ctx.stroke();
+    }
     ctx.restore();
   }
 
   function paperFace(rear) {
     if (rear ? backPaper : frontPaper) return rear ? backPaper : frontPaper;
     const canvas = surface(1536,448), ctx = canvas.getContext("2d");
-    ctx.fillStyle = rear ? ink : paper;
-    ctx.fillRect(0,0,1536,448);
     if (rear) {
-      type(ctx,"FOLD",56,180,"bold 112px Helvetica, Arial, sans-serif",paper);
-      type(ctx,"STUDIES",56,280,"112px Helvetica, Arial, sans-serif",paper);
-      ctx.fillStyle = paper; ctx.fillRect(0,352,1536,96);
+      const field=ctx.createLinearGradient(0,0,1536,355);
+      field.addColorStop(0,"#211e26");field.addColorStop(.48,"#191a25");field.addColorStop(1,"#24212a");
+      ctx.fillStyle=field;ctx.fillRect(0,0,1536,448);
+      for(const y of [56,298]){
+        for(const x of [104,246,388])drawPSA(ctx,x,y,70,"#37343d");
+      }
+      drawPSA(ctx,64,178,440,"#9ba0aa");
+      const band=ctx.createLinearGradient(0,355,0,448);
+      band.addColorStop(0,"#f6f5f3");band.addColorStop(1,"#e9e9e9");
+      ctx.fillStyle=band;ctx.fillRect(0,355,1536,93);
       backPaper = canvas;
     } else {
-      ctx.fillStyle = blue; ctx.fillRect(0,0,1536,24);
-      ctx.fillRect(0,424,1536,24);
-      ctx.fillStyle = "#e4dfd3"; ctx.fillRect(0,304,1536,8);
-      ctx.fillStyle = saffron; ctx.fillRect(0,24,24,400);
+      frontLabelPaper(ctx);
       frontPaper = canvas;
     }
     foil(ctx,rear);
@@ -150,20 +224,21 @@
       [key, String(data[key] ?? defaults[key]).trim()]));
     const canvas = surface(1536,448), ctx = canvas.getContext("2d");
     ctx.drawImage(paperFace(rear),0,0,1536,448);
-    const sans = "px Helvetica, Arial, sans-serif", mono = "px Menlo, monospace";
+    const print=(text,x,y,width,size,align="left")=>
+      type(ctx,text,x,y,size+"px Helvetica, Arial, sans-serif","#171a1c",align,width);
     if (rear) {
       drawQR(ctx,qrSource);
-      barcode(ctx,values.serial,72,368,408,64);
-      type(ctx,values.serial,1464,422,"52"+mono,ink,"right",848);
+      barcode(ctx,values.serial,84,363,407,69);
+      print(values.serial,1452,430,664,69,"right");
     } else {
-      type(ctx,values.yearSet.toUpperCase(),56,98,"48"+sans,ink,"left",1000);
-      type(ctx,values.cardNumber,1480,98,"48"+mono,ink,"right",328);
-      type(ctx,values.title,56,194,"bold 84"+sans,ink,"left",960);
-      type(ctx,values.variation,56,278,"56"+sans,ink,"left",960);
-      type(ctx,values.gradeText.toUpperCase(),1480,178,"48"+sans,ink,"right",392);
-      type(ctx,values.grade,1480,278,"bold 92"+sans,ink,"right",392);
-      barcode(ctx,values.serial,72,328,416,72);
-      type(ctx,values.serial,1480,390,"48"+mono,ink,"right",552);
+      print(values.yearSet.toUpperCase(),72,151,1006,72);
+      print(values.cardNumber.toUpperCase(),1456,151,350,72,"right");
+      print(values.title.toUpperCase(),72,225,944,72);
+      print(values.variation.toUpperCase(),72,299,944,70);
+      print(values.gradeText.toUpperCase(),1456,225,403,70,"right");
+      print(values.grade,1456,299,403,72,"right");
+      barcode(ctx,values.serial,76,313,400,65);
+      print(values.serial,1456,375,554,68,"right");
     }
     return canvas;
   }
