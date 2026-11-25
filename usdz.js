@@ -69,12 +69,16 @@
     const pbr = material.pbrMetallicRoughness;
     const texture = pbr.baseColorTexture && doc.textures[pbr.baseColorTexture.index];
     const isClear = !!material.extensions?.KHR_materials_transmission;
-    const color = isClear ? [.80, .86, .93] : (pbr.baseColorFactor || [1, 1, 1]);
+    const tint = material.extensions?.KHR_materials_volume?.attenuationColor;
+    const color = isClear && tint ? tint.map(channel => Math.sqrt(channel)) : (pbr.baseColorFactor || [1, 1, 1]);
     const diffuse = texture ? `color3f inputs:diffuseColor.connect = <${path}/Image.outputs:rgb>`
       : `color3f inputs:diffuseColor = (${color.slice(0, 3).join(',')})`;
-    // Quick Look's preview surface uses opacity and IOR for a clear, reflective shell.
-    const optical = isClear ? `float inputs:opacity = ${pbr.roughnessFactor < .1 ? .085 : .14}
-            float inputs:ior = ${material.extensions.KHR_materials_ior.ior}` : '';
+    // USD Preview Surface approximates transmission with opacity. Keep the face clear
+    // and the bevel's reflected strip tight even in viewers without volume rendering.
+    const optical = isClear ? `float inputs:opacity = ${(.055 + .70*pbr.roughnessFactor).toFixed(4)}
+            float inputs:ior = ${material.extensions.KHR_materials_ior.ior}
+            float inputs:clearcoat = 0.28
+            float inputs:clearcoatRoughness = ${pbr.roughnessFactor}` : '';
     return `def Material "${identifier(material.name)}" {
         token outputs:surface.connect = <${path}/Surface.outputs:surface>
         def Shader "Surface" {

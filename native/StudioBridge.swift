@@ -11,7 +11,7 @@ private struct StudioFailure: LocalizedError {
 final class StudioBridge: NSObject, WKScriptMessageHandlerWithReply {
     static let bootstrap = """
     (() => {
-      const send = (action, fields = {}) => window.webkit.messageHandlers.slab2.postMessage({action, ...fields});
+      const send = (action, fields = {}) => window.webkit.messageHandlers.slab3.postMessage({action, ...fields});
       Object.defineProperty(window, "slabHost", {value: Object.freeze({
         pickImage: side => send("pickImage", {side}),
         saveAsset: (dataURL, suggestedName) => send("saveAsset", {dataURL, suggestedName: suggestedName || "Slab.png"}),
@@ -26,20 +26,20 @@ final class StudioBridge: NSObject, WKScriptMessageHandlerWithReply {
     let pageURL: URL
     let draftURL: URL
     private var lastExportURL: URL?
-    private let files = DispatchQueue(label: "slab2.local-files", qos: .userInitiated)
+    private let files = DispatchQueue(label: "slab3.local-files", qos: .userInitiated)
     private static let draftLimit = 120 * 1024 * 1024
 
     static var localDraftURL: URL? {
         FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first?
-            .appendingPathComponent("Slab Studio 2", isDirectory: true).appendingPathComponent("draft.json")
+            .appendingPathComponent("Slab Studio 3", isDirectory: true).appendingPathComponent("draft.json")
     }
 
     static func seedFromStandardInput() throws -> Bool {
         let fm = FileManager.default
         guard let url = localDraftURL, let identifier = Bundle.main.bundleIdentifier,
-              identifier == "studio.slab.local-editor-2",
+              identifier == "studio.slab.local-editor-3",
               url.pathComponents.contains(identifier) else {
-            throw StudioFailure("Version 2 storage is unavailable.")
+            throw StudioFailure("Version 3 storage is unavailable.")
         }
         guard !fm.fileExists(atPath: url.path) else { return false }
         var bytes = Data()

@@ -64,7 +64,7 @@
     uniform vec2 uCardRails;
     uniform sampler2D uFront,uBack,uLabel,uLabelBack;
     ${stageSource}
-    const float eta=1.49;
+    const float eta=1.52;
     const vec2 shell=vec2(40.13,67.565), cardSize=vec2(31.75,44.45), labelSize=vec2(34.3,10.2);
     const vec2 cardCenter=vec2(0.,-13.7), labelCenter=vec2(0.,52.);
     float clamp01(float n){return clamp(n,0.,1.);}
@@ -91,31 +91,43 @@
       return (1.-smoothstep(-softness,softness,d))*smoothstep(.01,.19,f);
     }
     vec3 room(vec3 d,float rough){
-      vec3 ambient=mix(vec3(.095,.091,.109),vec3(.46,.48,.55),clamp01(.5+.48*d.y));
+      vec3 ambient=mix(vec3(.048,.052,.061),vec3(.38,.415,.455),clamp01(.5+.48*d.y));
       vec3 mainAxis=vec3(-1.29,.38,.83);
-      vec2 mainSize=vec2(.23,1.13);
-      float power=2.52,blur=.13;
-      if(uLight>.5&&uLight<1.5){mainAxis=vec3(-1.33,.43,.26);mainSize=vec2(.19,.87);power=3.22;blur=.10;}
-      if(uLight>1.5){mainAxis=vec3(-.83,1.25,.91);mainSize=vec2(.76,.66);power=2.27;blur=.25;}
+      vec2 mainSize=vec2(.21,1.13);
+      float power=3.5,blur=.082;
+      if(uLight>.5&&uLight<1.5){mainAxis=vec3(-1.33,.43,.26);mainSize=vec2(.13,1.07);power=4.55;blur=.055;}
+      if(uLight>1.5){mainAxis=vec3(-.83,1.25,.91);mainSize=vec2(.76,.66);power=2.82;blur=.16;}
       float flag=bank(d,vec3(-.33,.10,.92),vec2(.36,1.1),.22+rough);
       float rightFlag=bank(d,vec3(.59,-.11,.79),vec2(.25,1.13),.16+rough);
       ambient*=1.-.87*flag;
       ambient*=1.-.74*rightFlag;
       float key=bank(d,mainAxis,mainSize,blur+rough);
-      float rim=bank(d,vec3(.97,.09,.27),vec2(.19,1.04),.11+rough);
+      float rim=bank(d,vec3(.97,.09,.27),vec2(.118,1.12),.077+rough);
       float top=bank(d,vec3(.07,.93,-.32),vec2(.94,.23),.14+rough);
       float ceiling=bank(d,vec3(-.21,1.15,.78),vec2(.99,.26),.14+rough);
       float back=bank(d,vec3(-.51,-.13,-.91),vec2(.35,.89),.22+rough);
-      return (ambient+power*key*vec3(1.,.985,.965)+1.87*rim*vec3(.92,.965,1.)+
-        1.31*top+1.48*ceiling+.39*back)*(.39+.63*uStrength);
+      return (ambient+power*key*vec3(1.,.99,.975)+3.18*rim*vec3(.92,.98,1.)+
+        1.78*top+1.62*ceiling+.65*back)*(.39+.63*uStrength);
     }
     // Closed opposite wall. Broad planes return exact intersections; the few
     // corner rays use a bracketed, monotonic root on a convex rounded cap.
     vec4 body(vec3 p) {
       vec3 rect=rounded(p.xy,shell,3.7);
-      vec2 q=vec2(rect.z+.88,abs(p.z)-2.26);
-      vec2 g=(max(q.x,q.y)>0.)?safeNorm(max(q,0.)):(q.x>q.y?vec2(1.,0.):vec2(0.,1.));
-      float dist=length(max(q,0.))+min(max(q.x,q.y),0.)-.88;
+      // Two short tangent radii join a flat 45-degree bevel to the side and face.
+      vec2 q=vec2(rect.z,abs(p.z)-3.14),g;
+      const float bevel=.88,fillet=.22,diag=.70710678;
+      float dist,skew=q.y-q.x;
+      if(skew<fillet-bevel) {
+        vec2 fromCenter=vec2(q.x+fillet,max(0.,q.y+bevel));
+        if(q.y<=-bevel){g=vec2(1.,0.);dist=q.x;}
+        else {g=safeNorm(fromCenter);dist=length(fromCenter)-fillet;}
+      }else if(skew>bevel-fillet) {
+        vec2 fromCenter=vec2(max(0.,q.x+bevel),q.y+fillet);
+        if(q.x<=-bevel){g=vec2(0.,1.);dist=q.y;}
+        else {g=safeNorm(fromCenter);dist=length(fromCenter)-fillet;}
+      }else{
+        g=vec2(diag);dist=(q.x+q.y+bevel-.41421356*fillet)*diag;
+      }
       return vec4(rect.xy*g.x,sign(p.z)*g.y,dist);
     }
     float farWall(vec3 p,vec3 ray,out vec3 n){
@@ -147,30 +159,29 @@
       #endif
     }
     float widthOnNormal(vec2 n,vec2 dx,vec2 dy){return max(.0006,abs(dot(dx,n))+abs(dot(dy,n)));}
-    // Convolve the cross-section with the local pixel footprint before evaluating
-    // the slope. Long nearly tangential highlights retain a finite optical width.
-    vec2 bead(vec3 d,float sigma,float h,vec2 dx,vec2 dy){
-      float fp=widthOnNormal(d.xy,dx,dy),v=sigma*sigma+fp*fp/12.;
-      return d.xy*(-d.z/v)*h*sigma*inversesqrt(v)*exp(-.5*d.z*d.z/v);
-    }
-    vec2 shoulder(vec3 d,float sigma,float h,vec2 dx,vec2 dy){
-      float fp=widthOnNormal(d.xy,dx,dy),v=sigma*sigma+fp*fp/12.;
-      return d.xy*h*inversesqrt(v)*exp(-.5*d.z*d.z/v)*.399;
+    // Constant-slope cut between two flat lands. The two short polished transitions
+    // broaden with pixel footprint at grazing views, retaining the facet's area.
+    vec2 shoulder(vec3 d,float run,float height,vec2 dx,vec2 dy){
+      float fp=widthOnNormal(d.xy,dx,dy),ease=sqrt(.09*run*run+.25*fp*fp);
+      float band=smoothstep(-ease,ease,d.z+run)-smoothstep(-ease,ease,d.z-run);
+      return d.xy*(height/(2.*run))*band;
     }
     vec2 retainingGradient(vec2 p,vec2 dx,vec2 dy){
       vec3 weld=rounded(p,shell-vec2(2.95),1.94);
+      weld=vec3(-sign(weld.z)*weld.xy,abs(weld.z)-.34);
       vec3 cavity=rounded(p-vec2(0.,-14.95),vec2(36.52,49.25),1.64);
       vec3 cardWell=rounded(p-cardCenter,uCardShape.xy+vec2(1.05),max(0.,uCardShape.z-.1));
+      vec3 innerLip=rounded(p-cardCenter,uCardShape.xy+vec2(.32),max(0.,uCardShape.z-.83));
       vec3 labelWell=rounded(p-labelCenter,labelSize+vec2(1.01),1.24);
-      vec3 crossbar=rounded(p-vec2(0.,37.63),vec2(36.67,.67),.56);
+      vec3 crossbar=rounded(p-vec2(0.,37.63),vec2(36.67,.94),.18);
       vec2 cp=p-cardCenter;
-      vec3 horizontal=rounded(vec2(cp.x,abs(cp.y)-uCardShape.y-1.79),vec2(uCardRails.x,.43),.42);
+      vec3 horizontal=rounded(vec2(cp.x,abs(cp.y)-uCardShape.y-1.79),vec2(uCardRails.x,.43),.13);
       horizontal.y*=sign(cp.y);
-      vec3 vertical=rounded(vec2(abs(cp.x)-uCardShape.x-1.53,cp.y),vec2(.41,uCardRails.y),.40);
+      vec3 vertical=rounded(vec2(abs(cp.x)-uCardShape.x-1.53,cp.y),vec2(.41,uCardRails.y),.13);
       vertical.x*=sign(cp.x);
-      return bead(weld,.49,.41,dx,dy)+shoulder(cavity,.49,.51,dx,dy)+
-        shoulder(cardWell,.46,.72,dx,dy)+shoulder(labelWell,.49,.70,dx,dy)+
-        shoulder(crossbar,.39,.64,dx,dy)+shoulder(horizontal,.36,.50,dx,dy)+shoulder(vertical,.34,.46,dx,dy);
+      return shoulder(weld,.18,.32,dx,dy)+shoulder(cavity,.30,.43,dx,dy)+
+        shoulder(cardWell,.27,.64,dx,dy)+shoulder(innerLip,.13,-.17,dx,dy)+shoulder(labelWell,.26,.54,dx,dy)+
+        shoulder(crossbar,.22,.51,dx,dy)+shoulder(horizontal,.15,.36,dx,dy)+shoulder(vertical,.15,.33,dx,dy);
     }
     vec3 mold(vec3 base,vec3 p,vec3 ray,float maxT,float face,vec2 dx,vec2 dy,float weight){
       float t=(face*1.48-p.z)/(sign(ray.z+.0000001)*max(abs(ray.z),.00001));
@@ -184,12 +195,12 @@
       float bend=length(slope), flange=smoothstep(-.56,1.05,min(cw,lw));
       // A low, smoothly varying diffuser in the sealing flange. The clear
       // optical window has no synthetic high-frequency grain or engraved lines.
-      float frost=flange*(.068+.005*cos(.48*xy.x+.21*xy.y)*cos(.19*xy.y));
+      float frost=.018*flange;
       vec3 haze=toLinear(mix(uPale,vec3(.918,.924,.941),.77));
       vec3 traced=mix(base,haze,frost);
       float bounce=bend/(.47+bend);
-      float lobe=.17+.40*(1.-smoothstep(.64,.95,abs(dot(ray,n))));
-      vec3 refl=room(uRotation*reflect(ray,n),.13);
+      float lobe=.22+.51*(1.-smoothstep(.64,.95,abs(dot(ray,n))));
+      vec3 refl=room(uRotation*reflect(ray,n),.074);
       refl/=1.+.27*refl;
       traced=mix(traced,refl,lobe*bounce);
       // Internal die shoulders refract a narrow edge of the graded light bank.
@@ -199,9 +210,10 @@
       float focus=dot(offset,lamp);
       // Each curved land images a strip bank on one side and its adjacent
       // dark flag on the other. A broad angular transition avoids glint chatter.
-      float bankMix=smoothstep(-.32,.34,focus+.042*sin(xy.y*.038+xy.x*.024));
-      vec3 toolLight=mix(vec3(.020,.024,.032),vec3(.96,.975,1.),bankMix);
-      float exposure=.37*smoothstep(.015,.61,bend)*(.68+.32*clamp01(uStrength));
+      float footprint=min(.13,.055*(length(dx)+length(dy)));
+      float bankMix=smoothstep(-.18-footprint,.20+footprint,focus);
+      vec3 toolLight=mix(vec3(.010,.020,.024),vec3(1.,1.07,1.09),bankMix);
+      float exposure=.68*smoothstep(.035,.84,bend)*(.68+.32*clamp01(uStrength));
       traced=mix(traced,toolLight,exposure);
       traced=traced*(1.-.052*bounce)+(.037*max(focus,0.))*bounce;
       return mix(base,traced,weight);
@@ -257,7 +269,7 @@
       float rear=dot(exitDir,exitDir)<.001?1.:fresnel(abs(dot(exitDir,en)));
       vec3 worldI=uRotation*incident;
       vec2 xy=screenPoint(),shift=((uRotation*exitDir).xy-worldI.xy)*18.;
-      vec3 transmitted=stage(xy+shift),col=mix(transmitted,room(uRotation*reflected,.056),rear);
+      vec3 transmitted=stage(xy+shift),col=mix(transmitted,room(uRotation*reflected,.033),rear);
       float perspective=1.-(uRotation*p).z/520.;
       vec2 dx=derivativeAtPlane(incident,vec3(1.,0.,0.),perspective);
       vec2 dy=derivativeAtPlane(incident,vec3(0.,1.,0.),perspective);
@@ -266,14 +278,16 @@
       col=mold(col,origin,inner,exitT,-side,dx,dy,.31*(1.-paper.a));
       col=paper.rgb+(1.-paper.a)*col;
       col=mold(col,origin,inner,exitT,side,dx,dy,1.);
-      col*=exp(-min(exitT,50.)*vec3(.00128,.00101,.00067)*(1.-.85*paper.a));
+      // Long paths through the edge acquire a faint aqua tint. Ink sits just under the face.
+      float opticalPath=mix(min(exitT,50.),1.6/max(.45,abs(inner.z)),paper.a);
+      col*=exp(-opticalPath*vec3(.0055,.0011,.00185));
       float front=fresnel(abs(dot(n,-incident)));
-      vec3 spec=room(uRotation*reflect(incident,n),.046);
+      vec3 spec=room(uRotation*reflect(incident,n),.026);
       col=mix(col,spec,front);
       vec3 rgb=clamp(toDisplay(col),0.,1.);
       if(uClear>.5){
         vec3 bg=toDisplay(transmitted);
-        float alpha=clamp01(max(paper.a,.092+.45*rear+.78*front+.18*(1.-abs(n.z))));
+        float alpha=clamp01(max(paper.a,.058+.49*rear+.83*front+.2*(1.-abs(n.z))));
         vec3 low=(bg-rgb)/max(bg,vec3(.0001)),high=(rgb-bg)/max(1.-bg,vec3(.0001));
         vec3 a=max(low,high);alpha=max(alpha,max(a.x,max(a.y,a.z)));
         // Premultiplied linear coverage in display coordinates is resolved
@@ -351,10 +365,15 @@
       }
     }
     function shoulder(side){
-      for(let j=0;j<=16;j++){
-        const angle=(side>0?j:16-j)*Math.PI/32;
-        rings.push([b*(1-Math.cos(angle)),side*(2.26+b*Math.sin(angle)),Math.cos(angle),side*Math.sin(angle)]);
+      const rows=[],fillet=.22;
+      for(let part=0;part<2;part++)for(let j=0;j<=8;j++){
+        const angle=(part+j/8)*Math.PI/4;
+        const nx=Math.cos(angle),nz=Math.sin(angle);
+        const inset=(part?b:fillet)-fillet*nx;
+        const z=(part?3.14-fillet:2.26)+fillet*nz;
+        rows.push([inset,side*z,nx,side*nz]);
       }
+      rings.push(...(side>0?rows:rows.reverse()));
     }
     lip(-1);shoulder(-1);
     for(let j=1;j<48;j++){
@@ -761,7 +780,7 @@
         const s = 520 * scale / (520 - r[2]);
         return [width / 2 + s * r[0], height / 2 - s * r[1] - 1.5 * scale];
       };
-      const nz = rotatePoint(0, 0, 1, this.pose)[2];
+      const [nx,ny,nz] = rotatePoint(0, 0, 1, this.pose);
       const face = nz >= 0 ? 1 : -1;
       const trace = (cx, cy, w, h, radius, z) => {
         const points = outline(w / 2, h / 2, radius);
@@ -777,24 +796,57 @@
         if (fill) {ctx.fillStyle = fill; ctx.fill();}
         ctx.strokeStyle = stroke; ctx.lineWidth = Math.max(.35, weight * scale); ctx.stroke();
       };
-      ring(0, 0, size.w, size.h, 3.7, -3.12 * face, 'rgba(73,73,87,.75)', .7, 'rgba(205,207,219,.38)');
-      for (const z of [-2.3,-1.75,-.1,2.55,3.02]) {
-        ring(0, 0, size.w - .42, size.h - .42, 3.6, z * face, 'rgba(248,249,255,.56)', .5);
-      }
-      ring(0, 0, size.w - 3.1, size.h - 3.1, 2.5, 3.36 * face, 'rgba(255,255,255,.89)', .65);
-      ring(0, 0, size.w - 5.9, size.h - 5.9, 2, 1.43 * face, 'rgba(112,112,129,.60)', .47);
-      ring(0,-14.95,73.04,98.5,1.28,1.3 * face,'rgba(252,252,255,.85)',.83);
-      ring(0,37.63,73.36,1.35,.55,1.48*face,'rgba(111,116,129,.52)',.30);
-      ring(0,37.83,73.34,1.30,.55,1.50*face,'rgba(253,254,255,.74)',.35);
+      // Span each bevel with projected faces. Opposite slopes reflect the strip
+      // and the dark flag independently as their apparent widths change with orbit.
+      const ledge = (cx,cy,w,h,r,run,rise,flat=false) => {
+        const outer=outline(w/2+run,h/2+run,r+run,6);
+        const inner=outline(w/2-run,h/2-run,Math.max(.01,r-run),6);
+        const from=outer.map(p=>project(cx+p.x,cy+p.y,1.35*face));
+        const to=inner.map(p=>project(cx+p.x,cy+p.y,(1.35+rise)*face));
+        const lamp=lightIds[this.light]===1 ? [-.85,.25] : [-.55,.82];
+        for(let i=0;i<outer.length;i++){
+          const j=(i+1)%outer.length;
+          const n=rotatePoint((outer[i].nx+outer[j].nx)*.5,(outer[i].ny+outer[j].ny)*.5,0,this.pose);
+          const exposure=Math.max(0,Math.min(1,.5+(n[0]*lamp[0]+n[1]*lamp[1])*Math.sign(rise)));
+          const v=Math.round(32+215*exposure);
+          ctx.fillStyle='rgba('+v+','+Math.min(255,v+9)+','+Math.min(255,v+10)+','+
+            Math.min(.9,.48+.2*this.strength)+')';
+          ctx.beginPath();ctx.moveTo(...from[i]);ctx.lineTo(...from[j]);ctx.lineTo(...to[j]);ctx.lineTo(...to[i]);ctx.closePath();ctx.fill();
+        }
+        if(flat){
+          trace(cx,cy,w-2*run,h-2*run,Math.max(.01,r-run),(1.35+rise)*face);
+          ctx.fillStyle='rgba(173,202,199,.12)';ctx.fill();
+        }
+      };
+      const strip=ctx.createLinearGradient(width*.24,height*.29,width*.76,height*.71);
+      const sweep=.5+.24*nx*face-.16*ny*face;
+      strip.addColorStop(0,'rgba(232,252,255,.9)');
+      strip.addColorStop(sweep-.14,'rgba(38,62,68,.72)');
+      strip.addColorStop(sweep-.04,'rgba(33,49,58,.88)');
+      strip.addColorStop(sweep,'rgba(250,255,255,.98)');
+      strip.addColorStop(sweep+.095,'rgba(217,239,244,.8)');
+      strip.addColorStop(1,'rgba(51,76,80,.68)');
+      ring(0,0,size.w,size.h,3.7,-3.12*face,'rgba(38,70,68,.7)',.66,'rgba(181,215,208,.14)');
+      ring(0,0,size.w-.32,size.h-.32,3.54,-1.75*face,'rgba(46,76,77,.50)',.38);
+      ring(0,0,size.w,size.h,3.7,2.26*face,strip,.56);
+      ring(0,0,size.w-1.76,size.h-1.76,2.82,3.14*face,strip,.64);
+      ring(0,0,size.w-3.1,size.h-3.1,2.5,3.36*face,strip,.48);
+      ledge(0,0,size.w-5.22,size.h-5.22,2.28,.18,.32);
+      ledge(0,0,size.w-6.58,size.h-6.58,1.60,.18,-.32);
+      ledge(0,-14.95,73.04,98.5,1.64,.30,.43);
+      ledge(0,37.63,73.34,1.88,.18,.22,.51,true);
       const fitted = this.cardShape;
       for(const direction of [-1,1]){
-        ring(0,fitted.y+direction*(fitted.h/2+1.79),2*fitted.horizontalRail,.86,.41,1.48*face,'rgba(244,247,252,.72)',.33);
-        ring(direction*(fitted.w/2+1.53),fitted.y,.82,2*fitted.verticalRail,.40,1.48*face,'rgba(239,244,251,.70)',.32);
+        ledge(0,fitted.y+direction*(fitted.h/2+1.79),2*fitted.horizontalRail,.86,.13,.15,.36,true);
+        ledge(direction*(fitted.w/2+1.53),fitted.y,.82,2*fitted.verticalRail,.13,.15,.33,true);
       }
       for (const [r,key] of [[card,face > 0 ? 'front':'back'],[label,face > 0 ? 'label':'labelBack']]) {
         const src = this.sources[key];
         const cut = r === card ? fitted : r;
-        ring(cut.x, cut.y, cut.w+1.8,cut.h+1.8,cut.r,1.44 * face,'rgba(88,90,104,.62)',.48);
+        if(r===card){
+          ledge(cut.x,cut.y,cut.w+2.1,cut.h+2.1,Math.max(0,cut.r-.1),.27,.64);
+          ledge(cut.x,cut.y,cut.w+.64,cut.h+.64,Math.max(0,cut.r-.83),.13,-.17);
+        }else ledge(cut.x,cut.y,cut.w+2.02,cut.h+2.02,1.24,.26,.54);
         ctx.save(); trace(cut.x, cut.y, cut.w, cut.h, cut.r, .2*face); ctx.clip();
         if (src) {
           drawProjectedImage(ctx, src, (u, v) => project(r.x + (u-.5)*r.w*face,r.y+(.5-v)*r.h,.2*face));
@@ -802,11 +854,14 @@
         ctx.restore();
       }
       trace(0,0,size.w,size.h,3.7,3.14*face);
-      const highlight=ctx.createLinearGradient(width*.27,0,width*.76,height*.42);
-      const gloss = [.02,.052,.015][lightIds[this.light]] * this.strength + (1-Math.abs(nz))*.12;
+      const highlight=ctx.createLinearGradient(width*.21,0,width*.81,height*.52);
+      const gloss = ([.07,.095,.055][lightIds[this.light]] + (1-Math.abs(nz))*.21)*this.strength;
+      const spread=[.09,.046,.16][lightIds[this.light]];
       highlight.addColorStop(0,'rgba(255,255,255,0)');
-      highlight.addColorStop(.43,'rgba(255,255,255,'+(gloss+.11)+')');
-      highlight.addColorStop(.50,'rgba(255,255,255,'+gloss+')');
+      highlight.addColorStop(sweep-spread,'rgba(250,255,255,0)');
+      highlight.addColorStop(sweep-spread*.52,'rgba(250,255,255,'+gloss+')');
+      highlight.addColorStop(sweep+spread*.46,'rgba(250,255,255,'+(gloss*.72)+')');
+      highlight.addColorStop(sweep+spread,'rgba(250,255,255,0)');
       highlight.addColorStop(1,'rgba(255,255,255,0)');
       ctx.fillStyle=highlight;ctx.fill();
     }
@@ -862,14 +917,26 @@
     function feature(x, y, hw, hh, radius, width, lift, bead = false) {
       features.push({x,y,hw,hh,radius:Math.min(radius,hw,hh),width,lift,bead});
     }
-    feature(0,0,halfWidth-2.95,halfHeight-2.95,1.94,.49,-.25,true);
-    feature(0,-14.95,36.52,49.25,1.64,.51,.20);
-    feature(fitted.x,fitted.y,fitted.w/2+1.05,fitted.h/2+1.05,Math.max(0,fitted.r-.1),.48,.48);
-    feature(label.x,label.y,label.w/2+1.01,label.h/2+1.01,1.24,.52,.68);
-    feature(0,37.63,36.67,.67,.56,.35,-.27);
+    feature(0,0,halfWidth-2.95,halfHeight-2.95,1.94,.18,-.32,true);
+    feature(0,-14.95,36.52,49.25,1.64,.30,.20);
+    feature(fitted.x,fitted.y,fitted.w/2+1.05,fitted.h/2+1.05,Math.max(0,fitted.r-.1),.27,.64);
+    feature(fitted.x,fitted.y,fitted.w/2+.32,fitted.h/2+.32,Math.max(0,fitted.r-.83),.13,-.17);
+    feature(label.x,label.y,label.w/2+1.01,label.h/2+1.01,1.24,.26,.68);
+    feature(0,37.63,36.67,.94,.18,.22,-.51);
     for (const direction of [-1,1]) {
-      feature(0,fitted.y+direction*(fitted.h/2+1.79),fitted.horizontalRail,.43,.42,.33,-.28);
-      feature(direction*(fitted.w/2+1.53),fitted.y,.41,fitted.verticalRail,.40,.32,-.24);
+      feature(0,fitted.y+direction*(fitted.h/2+1.79),fitted.horizontalRail,.43,.13,.15,-.36);
+      feature(direction*(fitted.w/2+1.53),fitted.y,.41,fitted.verticalRail,.13,.15,-.33);
+    }
+    // Integral of smoothstep across the small tangent finish at either end of a bevel.
+    function easedRamp(x,ease) {
+      if(x<=-ease)return 0;
+      if(x>=ease)return x;
+      const t=.5+x/(2*ease);
+      return 2*ease*t*t*t*(1-.5*t);
+    }
+    function easedSlope(x,ease) {
+      const t=Math.max(0,Math.min(1,.5+x/(2*ease)));
+      return t*t*(3-2*t);
     }
     function field(x,y) {
       let height=.80, sx=0, sy=0;
@@ -877,16 +944,11 @@
         const px=x-f.x, py=y-f.y, qx=Math.abs(px)-f.hw+f.radius, qy=Math.abs(py)-f.hh+f.radius;
         const ax=Math.max(qx,0), ay=Math.max(qy,0), arc=Math.hypot(ax,ay);
         const distance=arc+Math.min(Math.max(qx,qy),0)-f.radius;
-        let value, gradient;
-        if (f.bead) {
-          const t=distance/f.width;
-          value=f.lift*Math.exp(-.5*t*t);
-          gradient=-value*t/f.width;
-        } else {
-          const t=Math.min(1,Math.max(0,.5-distance/(4*f.width)));
-          value=f.lift*t*t*(3-2*t);
-          gradient=-f.lift*6*t*(1-t)/(4*f.width);
-        }
+        const d=f.bead ? Math.abs(distance)-.34 : distance;
+        const run=f.width,ease=.30*run;
+        const value=f.lift*(1-(easedRamp(d+run,ease)-easedRamp(d-run,ease))/(2*run));
+        const gradient=-f.lift*(easedSlope(d+run,ease)-easedSlope(d-run,ease))/(2*run)*
+          (f.bead ? Math.sign(distance) : 1);
         height+=value;
         const nx=arc>0 ? ax/arc : Number(qx>qy);
         const ny=arc>0 ? ay/arc : Number(qy>=qx);
@@ -907,14 +969,22 @@
     // Sample tightly across curved tooling and sparsely through flat paper windows.
     function samplingAxis(limit, center, extent) {
       const intervals=[];
+      const cuts=[-limit,limit];
       for (const f of features) {
         for (const direction of [-1,1]) {
           const lip=f[center]+direction*f[extent], turn=lip-direction*f.radius;
-          intervals.push([Math.min(lip,turn)-2.5*f.width,Math.max(lip,turn)+2.5*f.width]);
+          const margin=1.3*f.width+(f.bead?.34:0);
+          intervals.push([Math.min(lip,turn)-margin,Math.max(lip,turn)+margin]);
+          for(const crest of (f.bead?[-.34,.34]:[0]))for(const slope of [-1,1]){
+            const change=lip+crest+slope*f.width;
+            for(const finish of [-.3,0,.3]){
+              const v=change+finish*f.width;
+              if(v>-limit && v<limit)cuts.push(v);
+            }
+          }
         }
       }
       intervals.push([-limit,-limit+1.8],[limit-1.8,limit]);
-      const cuts=[-limit,limit];
       for (const range of intervals) for(const v of range) if(v>-limit && v<limit)cuts.push(v);
       cuts.sort((a,b)=>a-b);
       const points=[cuts[0]];
@@ -1003,7 +1073,7 @@
 
   async function buildGLB(sources, cardShape) {
     const doc = {
-      asset: { version:'2.0', generator:'Slab Studio 2' }, scene:0, scenes:[{name:'Graded card holder',nodes:[]}],
+      asset: { version:'2.0', generator:'Slab Studio 3' }, scene:0, scenes:[{name:'Graded card holder',nodes:[]}],
       nodes:[], meshes:[], materials:[], accessors:[], bufferViews:[], buffers:[],
       images:[], textures:[], samplers:[{magFilter:9729,minFilter:9987,wrapS:33071,wrapT:33071}],
       extensionsUsed:['KHR_materials_transmission','KHR_materials_ior','KHR_materials_volume']
@@ -1049,12 +1119,12 @@
     function optical(name,roughness,thickness) {
       return doc.materials.push({name,pbrMetallicRoughness:{baseColorFactor:[1,1,1,1],metallicFactor:0,
         roughnessFactor:roughness},extensions:{
-        KHR_materials_transmission:{transmissionFactor:1},KHR_materials_ior:{ior:1.49},
-        KHR_materials_volume:{thicknessFactor:thickness,attenuationDistance:.40,attenuationColor:[.955,.965,.995]}
+        KHR_materials_transmission:{transmissionFactor:1},KHR_materials_ior:{ior:1.52},
+        KHR_materials_volume:{thicknessFactor:thickness,attenuationDistance:.085,attenuationColor:[.627,.911,.854]}
       }})-1;
     }
-    const clear=optical('Polished clear polymer',.047,.00165);
-    const molded=optical('Microtextured mold interior',.15,.002);
+    const clear=optical('Polished clear glass',.023,.00165);
+    const molded=optical('Polished inner glass',.065,.002);
     const paperEdge=doc.materials.push({name:'Paper stock edge',pbrMetallicRoughness:{
       baseColorFactor:[.81,.786,.738,1],metallicFactor:0,roughnessFactor:.85}})-1;
     const ink={};

@@ -54,7 +54,7 @@
   }
   function database() {
     if (!dbPromise) dbPromise = new Promise((resolve,reject) => {
-      const open = indexedDB.open('slab-studio-2-local',1);
+      const open = indexedDB.open('slab-studio-3-local',1);
       open.onupgradeneeded = () => open.result.createObjectStore('projects');
       open.onsuccess = () => resolve(open.result);
       open.onerror = () => reject(open.error);
