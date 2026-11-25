@@ -100,7 +100,8 @@
     uniform float uLightSize;
     uniform vec3 uCardShape;
     uniform vec2 uCardRails;
-    uniform sampler2D uFront,uBack,uLabel,uLabelBack;
+    uniform sampler2D uFront,uBack,uLabel,uLabelBack,uMoldGrain;
+    uniform float uGrainPeriod;
     ${stageSource}
     const float eta=1.49;
     const vec2 shell=vec2(40.13,67.565), cardSize=vec2(31.75,44.45), labelSize=vec2(34.3,10.2);
@@ -207,19 +208,6 @@
       float band=smoothstep(-ease,ease,d.z+run)-smoothstep(-ease,ease,d.z-run);
       return d.xy*(height/(2.*run))*band;
     }
-    float grainHash(vec2 cell){
-      vec3 q=fract(cell.xyx*vec3(.1031,.11369,.13787));
-      q+=dot(q,q.yzx+19.19);
-      return fract((q.x+q.y)*q.z);
-    }
-    // Filter the two fixed tool-grain scales independently. Nothing moves in screen space.
-    vec3 toolGrain(vec2 p,float pitch,float footprint){
-      vec2 q=p/pitch,i=floor(q),f=fract(q),v=f*f*(3.-2.*f);
-      float a=grainHash(i),b=grainHash(i+vec2(1.,0.)),c=grainHash(i+vec2(0.,1.)),d=grainHash(i+1.);
-      float grain=mix(mix(a,b,v.x),mix(c,d,v.x),v.y)-.5;
-      vec2 slope=6.*f*(1.-f)*vec2(mix(b-a,d-c,v.y),mix(c-a,d-b,v.x));
-      return vec3(grain,slope)*(1.-smoothstep(.38,1.18,footprint/pitch));
-    }
     // A shallow drafted depression spans the bridge between the divider and the pocket.
     // Differentiate the continuous profile so the highlight rolls into the two end shoulders.
     vec3 draftedBridge(vec2 xy){
@@ -255,26 +243,54 @@
       float openSeat=(1.-smoothstep(-edgeAA,edgeAA,well.z))*smoothstep(-.32,.26,cardEdge);
       // The deep inner wall transmits the backdrop, with fewer light paths into the corner air gap.
       vec3 traced=mix(base,base*.17+.003,openSeat*.78);
-      vec2 rot=vec2(.8,.6);
-      vec2 rotated=vec2(dot(xy,rot),dot(xy,vec2(-rot.y,rot.x)));
-      vec3 fine=toolGrain(rotated+5.7*face,.24,fp);
-      vec3 broad=toolGrain(xy-12.3*face,.51,fp);
-      vec2 grainSlope=.61*vec2(.8*fine.y-.6*fine.z,.6*fine.y+.8*fine.z)+.39*broad.yz;
-      float grain=.63*fine.x+.37*broad.x;
-      vec3 lamp=uLightRotation*normalize(keyAxis());
-      vec2 localLamp=(lamp*uRotation).xy;
-      float toolLight=clamp(.54+.46*dot(grainSlope,localLamp)*face,0.,1.);
-      float pocketShoulder=exp(-.5*pow((well.z-.80)/1.34,2.));
-      float scatter=flange*(.13+.105*grain+.065*(toolLight-.5)+.065*pocketShoulder);
-      vec3 milky=mix(vec3(.44,.445,.455),vec3(.60,.60,.61),toolLight)*(.78+.22*uStrength);
-      traced=mix(traced,milky,scatter);
-      vec3 n=normalize(vec3(-(slope+.15*flange*grainSlope)*face,face));
+      // These are mold-face normals, registered in millimetres and shared with the model exports.
+      // Mip filtering averages unresolved facets, while the surrounding resin stays transmissive.
+      vec4 waves=vec4(dot(xy,vec2(.154,.083)),dot(xy,vec2(.094,-.224)),
+                      dot(xy,vec2(.136,-.119)),dot(xy,vec2(.224,.105)));
+      vec4 wobble=sin(waves)*vec4(.58,.23,.49,.29);
+      vec2 toolPoint=xy+vec2(wobble.x+wobble.y,wobble.z+wobble.w);
+      vec4 localSlope=cos(waves)*vec4(.58,.23,.49,.29);
+      vec2 du=vec2(1.,0.)+localSlope.x*vec2(.154,.083)+localSlope.y*vec2(.094,-.224);
+      vec2 dv=vec2(0.,1.)+localSlope.z*vec2(.136,-.119)+localSlope.w*vec2(.224,.105);
+      vec2 duvX=vec2(dot(du,dx),dot(dv,dx)),duvY=vec2(dot(du,dy),dot(dv,dy));
+      vec2 tile=vec2(1.,-1.)/uGrainPeriod;
+      vec2 grainUV=toolPoint*tile,grainDX=duvX*tile,grainDY=duvY*tile;
+      if(face<0.){
+        grainUV=toolPoint.yx/uGrainPeriod+vec2(.31,.47);
+        grainDX=duvX.yx/uGrainPeriod;grainDY=duvY.yx/uGrainPeriod;
+      }
+      vec4 tooling=printSample(uMoldGrain,grainUV,grainDX,grainDY);
+      vec2 facet=2.*tooling.rg-1.;
+      if(face<0.)facet=vec2(-facet.y,facet.x);
+      float polished=tooling.b,nz=sqrt(max(.10,1.-dot(facet,facet)));
+      vec2 facetSlope=facet/nz;
+      vec3 n=normalize(vec3((flange*facetSlope-slope)*face,face));
       if(dot(n,ray)>0.)n=-n;
+      vec3 worldNormal=uRotation*n,light=uLightRotation*normalize(keyAxis());
+      vec3 halfVector=normalize(light-uRotation*ray);
+      float alignment=clamp01(dot(halfVector,worldNormal));
+      float facetKey=pow(alignment,mix(7.,23.,polished)/sqrt(uLightSize));
+      vec3 reflected=room(uRotation*reflect(ray,n),mix(.145,.055,flange*polished));
+      reflected/=1.+.55*reflected;
+      float pocketShoulder=exp(-.5*pow((well.z-.80)/1.34,2.));
+      float coverage=flange*(.115+.075*polished+.055*pocketShoulder);
+      float facetReturn=(.024+.20*polished)*facetKey*uStrength;
+      // A rough face sees some of the broad studio fill even between sharp lamp images.
+      // The lobe follows its normal, so an unlit face still transmits the backing.
+      float sky=.5+.5*dot(worldNormal,vec3(-.18,.74,.648));
+      float fill=mix(.10,.24,sky)*(.71+.29*uStrength);
+      vec3 reflectedGrain=fill*vec3(.98,1.,1.015)+.56*reflected+facetReturn*vec3(1.,.985,.97);
+      traced=mix(traced,reflectedGrain,coverage);
+      traced*=1.-.055*flange*(1.-tooling.a);
       float bend=length(slope),bounce=bend/(.62+bend);
-      vec3 reflected=room(uRotation*reflect(ray,n),.145);
-      reflected/=1.+.46*reflected;
-      float fres=.13+.30*(1.-smoothstep(.45,.98,abs(dot(ray,n))));
-      traced=mix(traced,reflected,fres*bounce);
+      // Shape the larger bevel once, with its own smooth normal. The relief on top
+      // should not amplify its individual sharp glints a second time at the ridge.
+      vec3 macroNormal=normalize(vec3(-slope*face,face));
+      if(dot(macroNormal,ray)>0.)macroNormal=-macroNormal;
+      float broadKey=pow(clamp01(dot(uRotation*macroNormal,halfVector)),6./sqrt(uLightSize));
+      vec3 softBevel=vec3(.10,.105,.11)+vec3(.48,.47,.45)*broadKey*uStrength;
+      float fres=.13+.30*(1.-smoothstep(.45,.98,abs(dot(ray,macroNormal))));
+      traced=mix(traced,mix(reflected,softBevel,flange),fres*bounce);
       // Broad lamp and opposite dark flag reveal the molded steps without chrome-like stripes.
       vec2 offset=(uRotation*vec3(-slope*face,0.)).xy;
       float focus=dot(offset,(uLightRotation*vec3(-.58,.82,.95)).xy);
@@ -390,19 +406,24 @@
       vec3 incident=normalize(p-camera),inner=refract(incident,n,1./eta);
       vec3 origin=p+inner*.025,en;
       float exitT=farWall(origin,inner,en);
-      vec3 exitDir=refract(inner,-en,eta),reflected=reflect(inner,-en);
-      float rear=dot(exitDir,exitDir)<.001?1.:fresnel(abs(dot(exitDir,en)));
-      vec3 worldI=uRotation*incident;
-      vec2 xy=screenPoint(),shift=((uRotation*exitDir).xy-worldI.xy)*18.;
-      vec3 transmitted=stage(xy+shift),col=mix(transmitted,room(uRotation*reflected,.033),rear);
       float perspective=1.-(uRotation*p).z/520.;
       vec2 dx=derivativeAtPlane(incident,vec3(1.,0.,0.),perspective);
       vec2 dy=derivativeAtPlane(incident,vec3(0.,1.,0.),perspective);
       float side=inner.z<0.?1.:-1.;
       vec4 retainer;
       vec4 paper=printAt(origin,inner,exitT,incident,dx,dy,retainer);
-      col=mold(col,origin,inner,exitT,-side,dx,dy,.31*(1.-paper.a));
-      col=paper.rgb+(1.-paper.a)*col;
+      vec3 col=paper.rgb,transmitted=vec3(0.);
+      float rear=0.;
+      // Only the uncovered portion can see the rear die or the backdrop behind it.
+      if(paper.a<1.){
+        vec3 exitDir=refract(inner,-en,eta),reflected=reflect(inner,-en);
+        rear=dot(exitDir,exitDir)<.001?1.:fresnel(abs(dot(exitDir,en)));
+        vec2 shift=((uRotation*exitDir).xy-(uRotation*incident).xy)*18.;
+        transmitted=stage(screenPoint()+shift);
+        vec3 behind=mix(transmitted,room(uRotation*reflected,.033),rear);
+        behind=mold(behind,origin,inner,exitT,-side,dx,dy,.31*(1.-paper.a));
+        col+=(1.-paper.a)*behind;
+      }
       col=mold(col,origin,inner,exitT,side,dx,dy,1.);
       col=retainer.rgb+(1.-retainer.a)*col;
       // Long paths through the edge acquire a faint aqua tint. Ink sits just under the face.
@@ -612,8 +633,24 @@
         gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,1,1,0,gl.RGBA,gl.UNSIGNED_BYTE,new Uint8Array([237,237,236,255]));
         this.textures[key]=tex;
       }
+      const grain=embossedMoldGrain(),data=new Uint8Array(4*grain.size*grain.size);
+      for(let i=0;i<grain.heights.length;i++){
+        data[i*4]=Math.round(127.5*(1+grain.normalX[i]));
+        data[i*4+1]=Math.round(127.5*(1+grain.normalY[i]));
+        data[i*4+2]=Math.round(255*grain.polish[i]);
+        data[i*4+3]=Math.round(255*grain.heights[i]);
+      }
+      this.grainTexture=this.newTexture();
+      gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,false);
+      gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,grain.size,grain.size,0,gl.RGBA,gl.UNSIGNED_BYTE,data);
+      gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.REPEAT);
+      gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.REPEAT);
+      gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR_MIPMAP_LINEAR);
+      gl.generateMipmap(gl.TEXTURE_2D);
       gl.useProgram(this.glassProgram.handle);
       textureKeys.forEach((key,i)=>gl.uniform1i(this.glassProgram.uniform[key[0].toUpperCase()+key.slice(1)],i));
+      gl.uniform1i(this.glassProgram.uniform.MoldGrain,textureKeys.length);
+      gl.uniform1f(this.glassProgram.uniform.GrainPeriod,grain.mm);
     }
     newTexture(){
       const gl=this.gl,tex=gl.createTexture();gl.bindTexture(gl.TEXTURE_2D,tex);
@@ -775,6 +812,7 @@
       gl.uniformMatrix3fv(u.LightRotation,false,state.lightRig.rotation);gl.uniform1f(u.LightSize,state.lightRig.size);
       gl.uniformMatrix3fv(u.Rotation,false,rotation);
       textureKeys.forEach((key,i)=>{gl.activeTexture(gl.TEXTURE0+i);gl.bindTexture(gl.TEXTURE_2D,state.textures[key]);});
+      gl.activeTexture(gl.TEXTURE0+textureKeys.length);gl.bindTexture(gl.TEXTURE_2D,this.grainTexture);
       gl.enable(gl.CULL_FACE);gl.cullFace(gl.BACK);gl.enable(gl.DEPTH_TEST);gl.depthFunc(gl.LEQUAL);
       gl.bindBuffer(gl.ARRAY_BUFFER,this.points);gl.enableVertexAttribArray(0);gl.vertexAttribPointer(0,3,gl.FLOAT,false,0,0);
       gl.bindBuffer(gl.ARRAY_BUFFER,this.normals);gl.enableVertexAttribArray(1);gl.vertexAttribPointer(1,3,gl.FLOAT,false,0,0);
@@ -981,7 +1019,7 @@
       strip.addColorStop(sweep,'rgba(248,248,243,.68)');
       strip.addColorStop(sweep+.095*rig.size,'rgba(221,223,224,.52)');
       strip.addColorStop(1,'rgba(61,64,67,.46)');
-      ring(0,0,size.w,size.h,3.7,-3.12*face,'rgba(52,54,55,.56)',.58,'rgba(177,178,179,.14)');
+      ring(0,0,size.w,size.h,3.7,-3.12*face,'rgba(52,54,55,.56)',.58,'rgba(177,178,179,.07)');
       ring(0,0,size.w-.32,size.h-.32,3.54,-1.75*face,'rgba(57,59,62,.35)',.38);
 
       const fitted=this.cardShape, wellW=fitted.w+2*pocket.sideGap, wellH=fitted.h+2*pocket.endGap;
@@ -992,10 +1030,10 @@
       ctx.clip('evenodd');
       const grainOrigin=project(0,0,1.38*face), gx=project(1,0,1.38*face), gy=project(0,1,1.38*face);
       ctx.transform(gx[0]-grainOrigin[0],gx[1]-grainOrigin[1],gy[0]-grainOrigin[0],gy[1]-grainOrigin[1],...grainOrigin);
-      const tile=softwareResin();
-      ctx.scale(1/tile.density,1/tile.density);
-      ctx.fillStyle=ctx.createPattern(tile.canvas,'repeat');
-      ctx.fillRect(-size.w*tile.density,-size.h*tile.density,2*size.w*tile.density,2*size.h*tile.density);
+      const tool=softwareResin(this,face,scale);
+      ctx.scale(1/tool.density,-1/tool.density);
+      ctx.imageSmoothingQuality='high';
+      ctx.drawImage(tool.canvas,-tool.canvas.width/2,-tool.canvas.height/2);
       ctx.restore();
 
       ring(0,0,size.w,size.h,3.7,2.26*face,strip,.56);
@@ -1084,18 +1122,88 @@
   }
 
   let resinTile;
-  function softwareResin() {
-    if (resinTile) return resinTile;
-    const grain=embossedMoldGrain();
-    const canvas=newCanvas(grain.size,grain.size), ctx=canvas.getContext('2d');
-    const pixels=ctx.createImageData(grain.size,grain.size);
-    for(let i=0;i<grain.heights.length;i++){
-      const tone=grain.heights[i];
-      const value=Math.max(0,Math.min(255,117+(tone-.5)*292));
-      pixels.data.set([value+1,value,value,80+76*Math.abs(tone-.5)],4*i);
+  // Bake the tool coordinates once per side. Relighting then needs one indexed
+  // copy per pixel, including for tiled PNGs that share the same pose and light.
+  function softwareToolCoordinates(width,height,density,grain,face) {
+    const indices=new Uint32Array(width*height),step=32, columns=Math.ceil(width/step)+1;
+    const uv=(px,py)=>{
+      const [x,y]=toolingPoint((px+.5-width/2)/density,(height/2-py-.5)/density);
+      const scale=grain.size/grain.mm;
+      return face>0?[x*scale,-y*scale]:[y*scale+.31*grain.size,x*scale+.47*grain.size];
+    };
+    const row=y=>Array.from({length:columns},(_,x)=>uv(x*step,y));
+    let top=row(0);
+    const mask=grain.size-1; // The shared mipmapped tool has a power-of-two period.
+    for(let y0=0;y0<height;y0+=step){
+      const bottom=row(y0+step);
+      for(let y=y0;y<Math.min(height,y0+step);y++){
+        const t=(y-y0)/step;
+        let u=top[0][0]+t*(bottom[0][0]-top[0][0]);
+        let v=top[0][1]+t*(bottom[0][1]-top[0][1]);
+        for(let j=1;j<columns;j++){
+          const nextU=top[j][0]+t*(bottom[j][0]-top[j][0]);
+          const nextV=top[j][1]+t*(bottom[j][1]-top[j][1]);
+          const du=(nextU-u)/step, dv=(nextV-v)/step;
+          for(let x=(j-1)*step;x<Math.min(j*step,width);x++){
+            indices[y*width+x]=(Math.floor(v)&mask)*grain.size+(Math.floor(u)&mask);
+            u+=du;v+=dv;
+          }
+          u=nextU;v=nextV;
+        }
+      }
+      top=bottom;
     }
-    ctx.putImageData(pixels,0,0);
-    resinTile={canvas,density:grain.size/6.4};
+    return indices;
+  }
+
+  function softwareResin(scene,face,scale) {
+    const grain=embossedMoldGrain();
+    const density=scale<7?12:18; // samples per mm in the software viewport or export
+    if (!resinTile || resinTile.density!==density) {
+      // Leave a margin for perspective near the silhouette.
+      const canvas=newCanvas(Math.ceil(size.w*1.17*density),Math.ceil(size.h*1.17*density));
+      const ctx=canvas.getContext('2d'),pixels=ctx.createImageData(canvas.width,canvas.height);
+      const rgba=new Uint8ClampedArray(4*grain.heights.length);
+      resinTile={canvas,ctx,pixels,density,rgba,shaded:new Uint32Array(rgba.buffer),surface:new Uint32Array(pixels.data.buffer)};
+    }
+    if(resinTile.face!==face){
+      const {canvas,density}=resinTile;
+      resinTile.indices=softwareToolCoordinates(canvas.width,canvas.height,density,grain,face);
+      resinTile.face=face;
+    }
+    const rig=scene.lightRig;
+    const key=[...scene.pose,scene.light,scene.strength,...rig.rotation,rig.size].join(',');
+    if(resinTile.key===key)return resinTile;
+    const [x,y,z]=lightAxes[scene.light], r=rig.rotation;
+    const lamp=[r[0]*x+r[3]*y+r[6]*z,r[1]*x+r[4]*y+r[7]*z,r[2]*x+r[5]*y+r[8]*z];
+    const len=Math.hypot(...lamp);
+    const half=[lamp[0]/len,lamp[1]/len,lamp[2]/len+1];
+    const halfLen=Math.hypot(...half)||1;
+    const localHalf=(axis)=>axis.reduce((sum,value,i)=>sum+value*half[i],0)/halfLen;
+    const tangentX=rotatePoint(1,0,0,scene.pose),tangentY=rotatePoint(0,1,0,scene.pose);
+    const hx=localHalf(tangentX),hy=localHalf(tangentY);
+    const skyX=1.4*(tangentX[1]+.42*tangentX[0]),skyY=1.4*(tangentY[1]+.42*tangentY[0]);
+    const facing=Math.max(0,face*localHalf(rotatePoint(0,0,1,scene.pose)));
+    const width=({softbox:.25,raking:.17,daylight:.33})[scene.light]*Math.sqrt(rig.size);
+    const width2=width*width, data=resinTile.rgba;
+    for(let i=0;i<grain.heights.length;i++){
+      const fx=face>0?grain.normalX[i]:grain.normalY[i],fy=face>0?grain.normalY[i]:-grain.normalX[i];
+      const dx=fx-hx, dy=fy-hy, d2=dx*dx+dy*dy;
+      const lobe=width2/(width2+d2);
+      const keyReflection=lobe*lobe*(.48+.52*grain.polish[i])*facing;
+      const skyReflection=Math.max(0,Math.min(1,.5+skyX*fx+skyY*fy));
+      // Composite a clear transmitting facet with its reflected light in premultiplied form.
+      const reflection=Math.min(.82,scene.strength*(.058+.20*skyReflection+.047*grain.polish[i]+.43*keyReflection));
+      const shadow=.11*(1-skyReflection);
+      const alpha=reflection+shadow*(1-reflection);
+      const value=(239*reflection+17*shadow*(1-reflection))/Math.max(.0001,alpha);
+      const p=4*i;
+      data[p]=value;data[p+1]=value;data[p+2]=value;data[p+3]=255*alpha;
+    }
+    const {indices,shaded,surface}=resinTile;
+    for(let i=0;i<indices.length;i++)surface[i]=shaded[indices[i]];
+    resinTile.ctx.putImageData(resinTile.pixels,0,0);
+    resinTile.key=key;
     return resinTile;
   }
 
@@ -1152,11 +1260,83 @@
       dy:-lift*(bellSlope*fade+bell*fadeSlope*taper)/span};
   }
 
-  // A periodic die texture in material space, spanning 6.4 mm of molded plastic.
-  // Neighboring cells share the same height and tangent at the tile boundary.
+  // A small, slowly varying registration shift prevents the periodic die tile
+  // from echoing regular clusters down the long rails and divider.
+  function toolingPoint(x,y) {
+    return [x+.58*Math.sin(.154*x+.083*y)+.23*Math.sin(.094*x-.224*y),
+      y+.49*Math.sin(.136*x-.119*y)+.29*Math.sin(.224*x+.105*y)];
+  }
+
+  // A seamless tool impression made of irregular planes. Each pair of neighbouring
+  // faces shares its actual height edge; the highlight comes from its normal and
+  // finish, never from painting white or dark speckles onto the clear resin.
   let moldGrain;
   function embossedMoldGrain() {
     if(moldGrain)return moldGrain;
+    const size=512,mm=19.2,samples=2;
+    const count=size*size;
+    const heights=new Float32Array(count),normalX=new Float32Array(count);
+    const normalY=new Float32Array(count),polish=new Float32Array(count);
+    let seed=9272113;
+    const random=()=>((seed=(Math.imul(1664525,seed)+1013904223)>>>0)/4294967296);
+    function impress(cells,amplitude,finishWeight){
+      const nodes=Array.from({length:cells*cells},()=>({
+        x:(random()-.5)*.56,y:(random()-.5)*.56,z:(random()-.5)*.67,
+        finish:[random(),random()]
+      }));
+      function vertex(x,y){
+        const n=nodes[((y+cells)%cells)*cells+(x+cells)%cells];
+        return {x:x+n.x,y:y+n.y,z:n.z,finish:n.finish};
+      }
+      const resolution=size*samples, scale=resolution/cells;
+      function rasterFace(a,b,c,finish) {
+        const bx=b.x-a.x,by=b.y-a.y,cx=c.x-a.x,cy=c.y-a.y;
+        const bz=b.z-a.z,cz=c.z-a.z,area=bx*cy-by*cx;
+        const dx=(bz*cy-cz*by)/area,dy=(bx*cz-cx*bz)/area;
+        const weight=1/(samples*samples);
+        const x0=Math.max(0,Math.floor(Math.min(a.x,b.x,c.x)*scale));
+        const x1=Math.min(resolution,Math.ceil(Math.max(a.x,b.x,c.x)*scale));
+        const y0=Math.max(0,Math.floor(Math.min(a.y,b.y,c.y)*scale));
+        const y1=Math.min(resolution,Math.ceil(Math.max(a.y,b.y,c.y)*scale));
+        const gloss=finish>.89?.77+.23*(finish-.89)/.11:.08+.53*finish**1.6;
+        for(let y=y0;y<y1;y++)for(let x=x0;x<x1;x++) {
+          const px=(x+.5)/scale-a.x,py=(y+.5)/scale-a.y;
+          const u=(px*cy-py*cx)/area,v=(bx*py-by*px)/area;
+          if(u<0 || v<0 || u+v>1)continue;
+          const i=Math.floor(y/samples)*size+Math.floor(x/samples);
+          heights[i]+=(a.z+u*bz+v*cz)*weight*amplitude*86/(cells*.67);
+          // Pixel rows point down, but normalY is expressed in model-up coordinates.
+          normalX[i]-=dx*amplitude*weight;normalY[i]+=dy*amplitude*weight;
+          polish[i]+=gloss*finishWeight*weight;
+        }
+      }
+      const dist2=(a,b)=>(a.x-b.x)**2+(a.y-b.y)**2;
+      for(let y=-1;y<=cells;y++)for(let x=-1;x<=cells;x++){
+        const a=vertex(x,y),b=vertex(x+1,y),c=vertex(x+1,y+1),d=vertex(x,y+1);
+        if(dist2(a,c)<dist2(b,d)){
+          rasterFace(a,b,c,a.finish[0]);rasterFace(a,c,d,a.finish[1]);
+        }else{
+          rasterFace(a,b,d,a.finish[0]);rasterFace(b,c,d,a.finish[1]);
+        }
+      }
+    }
+    // Fine irregular fractures break up the long planar highlights. Combining
+    // the two height gradients before normalization keeps their relief coherent.
+    impress(86,.90,.78);
+    impress(191,.58,.22);
+    for(let i=0;i<count;i++){
+      const inv=1/Math.hypot(normalX[i],normalY[i],1);
+      normalX[i]*=inv;normalY[i]*=inv;
+      heights[i]=Math.max(0,Math.min(1,.5+heights[i]));
+    }
+    return moldGrain={size,mm,heights,normalX,normalY,polish};
+  }
+
+  // The label uses a separate, fixed print die so changing the plastic tooling
+  // never changes its foil grain, registered normals or spectral response.
+  let foilGrain;
+  function foilFacetGrain() {
+    if(foilGrain)return foilGrain;
     const size=128, heights=new Float32Array(size*size);
     function noise(x,y,cells) {
       function corner(i,j) {
@@ -1171,7 +1351,7 @@
     for(let y=0;y<size;y++)for(let x=0;x<size;x++){
       heights[y*size+x]=.60*noise(x,y,19)+.31*noise(x,y,39)+.09*noise(x,y,62);
     }
-    return moldGrain={size,heights};
+    return foilGrain={size,heights};
   }
 
   // Build a single closed optical solid for each molded half. The recesses and
@@ -1389,7 +1569,15 @@
       previous=ids;
     }
     zipper(previous,perimeter);
-    for(let i=0;i<g.p.length;i+=3)g.uv.push(g.p[i]/.0064,-g.p[i+1]/.0064);
+    const period=embossedMoldGrain().mm;
+    // Separate die halves have different registration. This rotation and phase
+    // prevent their tiny tool marks from stacking in the same place through the case.
+    for(let i=0;i<g.p.length;i+=3){
+      const warped=toolingPoint(1000*g.p[i],1000*g.p[i+1]);
+      const x=warped[0]/period,y=warped[1]/period;
+      if(side>0)g.uv.push(x,-y);
+      else g.uv.push(y+.31,x+.47);
+    }
     return g;
   }
 
@@ -1399,7 +1587,7 @@
       nodes:[], meshes:[], materials:[], accessors:[], bufferViews:[], buffers:[],
       images:[], textures:[], samplers:[{magFilter:9729,minFilter:9987,wrapS:33071,wrapT:33071},
         {magFilter:9729,minFilter:9987,wrapS:10497,wrapT:10497}],
-      extensionsUsed:['KHR_materials_transmission','KHR_materials_ior','KHR_materials_volume','KHR_materials_iridescence','KHR_materials_specular']
+      extensionsUsed:['KHR_materials_transmission','KHR_materials_ior','KHR_materials_volume','KHR_materials_clearcoat','KHR_materials_iridescence','KHR_materials_specular']
     };
     const chunks=[];
     let offset=0;
@@ -1476,16 +1664,29 @@
       bytes[offset+2]=127.5+127.5*inverse;bytes[offset+3]=255;
     }
     const clear=optical('Clear molded polymer',.055,.00165);
-    const molded=optical('Pebbled molded surround',.24,.002,.91);
+    const molded=optical('Pebbled molded surround',1,.002,.99);
     const retainer=optical('Polished clear retainers',.082,.00058);
     const grain=embossedMoldGrain(), tile=newCanvas(grain.size,grain.size), tileCtx=tile.getContext('2d');
     const tilePixels=tileCtx.createImageData(grain.size,grain.size);
-    const at=(x,y)=>grain.heights[((y+grain.size)%grain.size)*grain.size+(x+grain.size)%grain.size];
-    for(let y=0;y<grain.size;y++)for(let x=0;x<grain.size;x++){
-      normalPixel(tilePixels.data,4*(y*grain.size+x),.72*(at(x-1,y)-at(x+1,y)),.72*(at(x,y-1)-at(x,y+1)));
+    const finishPixels=tileCtx.createImageData(grain.size,grain.size);
+    for(let i=0;i<grain.heights.length;i++){
+      const j=i*4,nx=grain.normalX[i],ny=grain.normalY[i],p=grain.polish[i];
+      tilePixels.data[j]=127.5*(1+nx);
+      tilePixels.data[j+1]=127.5*(1-ny); // positive glTF v is toward the bottom row
+      tilePixels.data[j+2]=127.5*(1+Math.sqrt(Math.max(0,1-nx*nx-ny*ny)));
+      tilePixels.data[j+3]=255;
+      finishPixels.data[j]=255*(.03+.54*p**4);
+      finishPixels.data[j+1]=255*(.033+.19*(1-p)**1.6);
+      finishPixels.data[j+2]=0;finishPixels.data[j+3]=255;
     }
     tileCtx.putImageData(tilePixels,0,0);
-    doc.materials[molded].normalTexture=await texture(tile,'Mold grain normals',1);
+    const die=doc.materials[molded];
+    die.normalTexture=await texture(tile,'Mold grain normals',1);
+    tileCtx.putImageData(finishPixels,0,0);
+    const finish=await texture(tile,'Mold facet finish',1);
+    die.pbrMetallicRoughness.metallicRoughnessTexture=finish;
+    die.extensions.KHR_materials_clearcoat={clearcoatFactor:1,clearcoatTexture:finish,
+      clearcoatRoughnessFactor:1,clearcoatRoughnessTexture:finish,clearcoatNormalTexture:die.normalTexture};
     const paperEdge=doc.materials.push({name:'Paper stock edge',pbrMetallicRoughness:{
       baseColorFactor:[.81,.786,.738,1],metallicFactor:0,roughnessFactor:.85}})-1;
     const ink={};
@@ -1507,6 +1708,8 @@
       const film={iridescenceFactor:.42,iridescenceIor:1.38,iridescenceThicknessMinimum:200,iridescenceThicknessMaximum:420};
       const material={name,pbrMetallicRoughness:pbr,extensions:{KHR_materials_iridescence:film}};
       if(sources[key]){
+        const grain=foilFacetGrain();
+        const at=(x,y)=>grain.heights[((y+grain.size)%grain.size)*grain.size+(x+grain.size)%grain.size];
         // Register a compact crop of the printed die to the overlay's own UVs.
         // The metallic response is strongest on neutral exposed foil and gives
         // way to a diffuse finish on the colored ink and dark overprint.

@@ -83,6 +83,7 @@
             float2 inputs:st.connect = <${path}/UV.outputs:result>
             ${decode}
             float3 outputs:rgb
+            float outputs:r
             float outputs:g
             float outputs:b
         }`);
@@ -107,10 +108,13 @@
       ? `normal3f inputs:normal.connect = <${imageNode('Grain',material.normalTexture,'raw',true)}.outputs:rgb>` : '';
     // Apple Preview Surface models glossy transmission with opacity and IOR. On
     // foil, the registered normal and metal/roughness maps provide moving flashes.
-    const optical = isClear ? `float inputs:opacity = ${(.035 + .88*pbr.roughnessFactor).toFixed(4)}
+    const faceted=!!(response && material.extensions?.KHR_materials_clearcoat);
+    const polished=faceted ? `float inputs:clearcoat.connect = <${response}.outputs:r>
+            float inputs:clearcoatRoughness.connect = <${response}.outputs:g>` : `float inputs:clearcoat = 0.24
+            float inputs:clearcoatRoughness = ${pbr.roughnessFactor}`;
+    const optical = isClear ? `float inputs:opacity = ${faceted ? .075 : (.035 + .88*pbr.roughnessFactor).toFixed(4)}
             float inputs:ior = ${material.extensions.KHR_materials_ior.ior}
-            float inputs:clearcoat = 0.24
-            float inputs:clearcoatRoughness = ${pbr.roughnessFactor}` : '';
+            ${polished}` : '';
     return `def Material "${identifier(material.name)}" {
         token outputs:surface.connect = <${path}/Surface.outputs:surface>
         def Shader "Surface" {
