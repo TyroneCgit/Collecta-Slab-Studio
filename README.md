@@ -4,6 +4,8 @@ A local graded-card editor for macOS and the browser. Each slab starts with a re
 
 The v3 case has polished glass bevels and a slight aqua tint through its thick edges. The v3 desktop app keeps a separate local draft from Studio 2.
 
+The QR code on the right side of the rear label opens PSA’s general certificate lookup. Under **Card → Rear label QR**, choose **Replace** to use your own image. The reset button restores the default code.
+
 ## Light the case
 
 In **Scene → Studio lighting**, choose **Strip light** for a narrow reflection along the divider and rails. Drag the dot in **Light position** to move the reflection while keeping the slab still. Use the arrow keys for one-degree adjustments, or enter an angle directly. **Source size** changes the width of the reflection and **Light intensity** sets its brightness. **Reset lighting** restores the default softbox.

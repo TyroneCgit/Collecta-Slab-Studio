@@ -5,7 +5,6 @@
   const drawings = {
     chevron:'<path d="m6 9 6 6 6-6"/>',
     cube:'<path d="m12 2 8 4.5v10L12 21l-8-4.5v-10L12 2Z"/><path d="m4 6.5 8 4.5 8-4.5M12 11v10"/>',
-    qr:'<rect x="3" y="3" width="6" height="6" rx=".7"/><rect x="15" y="3" width="6" height="6" rx=".7"/><rect x="3" y="15" width="6" height="6" rx=".7"/><path d="M13 13h3v3h-3v4h3m3-7h2v3m-3 3h3v2"/>',
     export:'<path d="M12 15V3m-4 4 4-4 4 4M4 14v5a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-5"/>',
     upload:'<path d="M12 16V4m-4 4 4-4 4 4M5 15v4h14v-4"/>',
     card:'<rect x="5" y="2.5" width="14" height="19" rx="2.4"/><path d="M8 7h8m-8 4h8v7H8z"/>',
@@ -130,14 +129,10 @@
     if (textures.label || textures.labelBack) model.setTextures(textures);
   }
   function showQR() {
-    const symbol = $('#qr-symbol');
-    if (qrImage) {
-      const img = document.createElement('img');
-      img.src = custom.qr;img.alt = '';
-      symbol.replaceChildren(img);
-    } else symbol.innerHTML = icon('qr');
-    $('#qr-pick').textContent = qrImage ? 'Replace' : 'Add image';
-    $('#qr-pick').setAttribute('aria-label',qrImage ? 'Replace rear label QR image' : 'Add rear label QR image');
+    const thumb = $('#qr-thumb');
+    thumb.src = custom.qr || SlabArt.defaultQR().toDataURL();
+    thumb.alt = qrImage ? 'Custom QR code' : 'PSA certificate lookup QR code';
+    thumb.title = thumb.alt;
     $('#qr-remove').hidden = !qrImage;
   }
   $('#qr-remove').onclick = () => {

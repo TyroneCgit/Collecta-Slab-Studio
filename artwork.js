@@ -5,7 +5,7 @@
     variation: "Ultramarine", gradeText: "MINT", grade: "9", serial: "FS14027"
   });
   const ink = "#13252f", blue = "#3256ce", saffron = "#f5b653", paper = "#f6f0e3";
-  let frontPaper, backPaper, sampleCards;
+  let frontPaper, backPaper, sampleCards, lookupQR;
 
   function surface(width, height) {
     const canvas = document.createElement("canvas");
@@ -200,23 +200,55 @@
     }
   }
 
-  function drawQR(ctx, qrSource) {
-    if (qrSource) {
-      const x = 1105, y = 42, size = 292, pad = 29;
-      const sw = qrSource.naturalWidth || qrSource.width;
-      const sh = qrSource.naturalHeight || qrSource.height;
-      if (sw > 0 && sh > 0) {
-        ctx.fillStyle = "#fff";
-        ctx.beginPath();
-        ctx.roundRect(x, y, size, size, 16);
-        ctx.fill();
-        const factor = (size - 2*pad) / Math.max(sw, sh);
-        const w = Math.round(sw * factor), h = Math.round(sh * factor);
-        ctx.imageSmoothingEnabled = false;
-        ctx.drawImage(qrSource, Math.round(x + (size-w)/2), Math.round(y + (size-h)/2), w, h);
-        ctx.imageSmoothingEnabled = true;
+  function defaultQR() {
+    if (lookupQR) return lookupQR;
+    // Fixed QR version 3-Q for https://www.psacard.com/cert
+    const rows = [
+      "11111110010110000000001111111","10000010001101111101101000001",
+      "10111010101000001111001011101","10111010000001111000101011101",
+      "10111010100101101010001011101","10000010110101011001001000001",
+      "11111110101010101010101111111","00000000010111100101100000000",
+      "01001010101011110011010110100","01000101100001111110001111111",
+      "11100010010100110010110010101","00010001000001100100110011011",
+      "00011011001000100101000101001","00111001100001001100001010111",
+      "00001010000010100010100010001","10001100101000111001101101001",
+      "11110011101001111001100000000","10000001001101000010001110101",
+      "00000111001001010100100010001","00011101110011011101000100011",
+      "11111110110101100101111111011","00000000110010111000100010101",
+      "11111110010111010101101010001","10000010010101011111100011000",
+      "10111010110001100011111110000","10111010001010101000000100010",
+      "10111010010010001001110000111","10000010101110000110100101011",
+      "11111110001011010100111011010"
+    ];
+    const quietZone = 4;
+    const canvas = document.createElement("canvas");
+    canvas.width = canvas.height = rows.length + 2*quietZone;
+    const ctx = canvas.getContext("2d");
+    ctx.fillStyle = "#fff"; ctx.fillRect(0,0,canvas.width,canvas.height);
+    ctx.fillStyle = "#101010";
+    rows.forEach((row,y) => {
+      for (let x=0;x<row.length;x++) {
+        if (row[x] === "1") ctx.fillRect(x+quietZone,y+quietZone,1,1);
       }
-    }
+    });
+    lookupQR = canvas;
+    return canvas;
+  }
+
+  function drawQR(ctx, qrSource) {
+    const source = qrSource || defaultQR();
+    const x = 1105, y = 42, size = 292;
+    const sw = source.naturalWidth || source.width, sh = source.naturalHeight || source.height;
+    if (!(sw > 0 && sh > 0)) return;
+    const pad = qrSource ? 29 : 0; // The lookup code includes its own quiet zone.
+    const factor = (size - 2*pad) / Math.max(sw,sh);
+    const w = Math.round(sw*factor), h = Math.round(sh*factor);
+    ctx.save();
+    ctx.beginPath();ctx.roundRect(x,y,size,size,16);ctx.clip();
+    ctx.fillStyle = "#fff";ctx.fillRect(x,y,size,size);
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(source,Math.round(x+(size-w)/2),Math.round(y+(size-h)/2),w,h);
+    ctx.restore();
   }
 
   function label(data = defaults, rear = false, qrSource = null) {
@@ -308,5 +340,5 @@
     if (!sampleCards) sampleCards = {front:cardFace(false),back:cardFace(true)};
     return sampleCards;
   }
-  window.SlabArt = Object.freeze({defaults, sample, label});
+  window.SlabArt = Object.freeze({defaults, sample, label, defaultQR});
 })();
