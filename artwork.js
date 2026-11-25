@@ -96,6 +96,49 @@
     ctx.restore();
   }
 
+  function foilGrain(ctx, x, y, width, height, seed) {
+    // The same physical flecks stay in place when the label is edited or exported.
+    function random() {
+      seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
+      return seed / 4294967296;
+    }
+
+    ctx.save();
+    ctx.globalCompositeOperation = "overlay";
+    const noise = document.createElement("canvas");
+    for (const [pitch, opacity] of [[3.1, .31], [1.1, .44]]) {
+      noise.width = Math.ceil(width / pitch);
+      noise.height = Math.ceil(height / pitch);
+      const noiseCtx = noise.getContext("2d");
+      const pixels = noiseCtx.createImageData(noise.width, noise.height);
+      for (let i = 0; i < pixels.data.length; i += 4) {
+        const tone = random() * 255;
+        const warmth = (random() - .5) * 12;
+        pixels.data[i] = tone + warmth;
+        pixels.data[i + 1] = tone;
+        pixels.data[i + 2] = tone - warmth;
+        pixels.data[i + 3] = 255;
+      }
+      noiseCtx.putImageData(pixels, 0, 0);
+      ctx.globalAlpha = opacity;
+      ctx.drawImage(noise, x, y, width, height);
+    }
+    ctx.globalCompositeOperation = "source-over";
+    const metals = ["#faf8f1", "#e9e8e8", "#cecbd1", "#8c8588", "#706d72"];
+    const count = Math.round(width * height / 20);
+    for (let i = 0; i < count; i++) {
+      const cx = x + random() * width, cy = y + random() * height;
+      const length = .55 + 1.55 * random() ** 2;
+      const thickness = length * (.24 + .43 * random());
+      ctx.fillStyle = metals[Math.floor(random() * metals.length)];
+      ctx.globalAlpha = .32 + .46 * random();
+      ctx.beginPath();
+      ctx.ellipse(cx, cy, length, thickness, random() * Math.PI, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+
   // The insert's metalized dies are registered to these two polygons in the 3D model.
   function foil(ctx, rear) {
     ctx.save();
@@ -109,15 +152,12 @@
     const x = rear ? 614 : 670, y = rear ? 0 : 316;
     const w = rear ? 308 : 204, h = rear ? 261 : 132;
     const foilInk = ctx.createLinearGradient(x,y,x+w,y+h);
-    foilInk.addColorStop(0, "#a7a6aa");
-    foilInk.addColorStop(.32, "#eae3d6");
-    foilInk.addColorStop(.56, "#c3cdd4");
-    foilInk.addColorStop(1, "#b3a8ac");
+    foilInk.addColorStop(0, "#9b9190");
+    foilInk.addColorStop(.32, "#b5aca9");
+    foilInk.addColorStop(.56, "#afa7a5");
+    foilInk.addColorStop(1, "#a29998");
     ctx.fillStyle = foilInk; ctx.fillRect(x,y,w,h);
-    for (let offset = -h; offset < w; offset += 8) {
-      rule(ctx,x+offset,y,x+offset+h,y+h,"rgba(255,255,255,.38)");
-      rule(ctx,x+offset,y+h,x+offset+h,y,"rgba(111,104,126,.16)");
-    }
+    foilGrain(ctx, x, y, w, h, rear ? 37 : 19);
     drawPSA(ctx,x+w*.07,y+h*(rear ? .39 : .47),w*.86);
     ctx.restore();
   }

@@ -122,19 +122,21 @@
       float d=boxDist(uv,halfSize,min(.15,.7*halfSize.x));
       return (1.-smoothstep(-softness,softness,d))*smoothstep(.01,.19,f);
     }
+    vec3 keyAxis(){
+      return uLight<.5?vec3(-1.29,.38,.83):(uLight<1.5?vec3(-1.33,.43,.26):vec3(-.83,1.25,.91));
+    }
     vec3 room(vec3 d,float rough){
       d=d*uLightRotation;
       vec3 ambient=mix(vec3(.048,.052,.061),vec3(.38,.415,.455),clamp01(.5+.48*d.y));
-      vec3 mainAxis=vec3(-1.29,.38,.83);
       vec2 mainSize=vec2(.21,1.13);
       float power=3.5,blur=.082;
-      if(uLight>.5&&uLight<1.5){mainAxis=vec3(-1.33,.43,.26);mainSize=vec2(.13,1.07);power=4.55;blur=.055;}
-      if(uLight>1.5){mainAxis=vec3(-.83,1.25,.91);mainSize=vec2(.76,.66);power=2.82;blur=.16;}
+      if(uLight>.5&&uLight<1.5){mainSize=vec2(.13,1.07);power=4.55;blur=.055;}
+      if(uLight>1.5){mainSize=vec2(.76,.66);power=2.82;blur=.16;}
       float flag=bank(d,vec3(-.33,.10,.92),vec2(.36,1.1),.22+rough);
       float rightFlag=bank(d,vec3(.59,-.11,.79),vec2(.25,1.13),.16+rough);
       ambient*=1.-.87*flag;
       ambient*=1.-.74*rightFlag;
-      float key=bank(d,mainAxis,mainSize*uLightSize,blur*uLightSize+rough);
+      float key=bank(d,keyAxis(),mainSize*uLightSize,blur*uLightSize+rough);
       float rim=bank(d,vec3(.97,.09,.27),vec2(.118,1.12),.077+rough);
       float top=bank(d,vec3(.07,.93,-.32),vec2(.94,.23),.14+rough);
       float ceiling=bank(d,vec3(-.21,1.15,.78),vec2(.99,.26),.14+rough);
@@ -287,9 +289,19 @@
         vec2 mid=side>0.?vec2(.50260,.14732):vec2(.5,.76);
         float foil=1.-smoothstep(-.001,.001,boxDist(uv-mid,vec2(.06641,.14732),.00001));
         if(side<0.)foil=(1.-smoothstep(-.001,.001,abs(uv.x-.5)-.10026*clamp01((uv.y-.41741)/.11384)))*smoothstep(.41741,.419,uv.y);
-        float glint=pow(.5+.5*cos(10.*(uv.x-mid.x)+8.*ray.x+3.6*ray.y+1.2),3.);
-        vec3 spectral=.5+.5*cos(vec3(.18,2.1,4.3)+9.*ray.x+7.*uv.x+3.*uv.y);
-        pigment+=foil*glint*smoothstep(.10,.55,max(pigment.r,max(pigment.g,pigment.b)))*(.12+.16*spectral)*uStrength;
+        if(foil>0.){
+          // The metal grain is printed into the label texture and uses its mip filter.
+          // Leave saturated ink alone, and give the brighter bare flecks the strongest return.
+          float high=max(texel.r,max(texel.g,texel.b)),low=min(texel.r,min(texel.g,texel.b));
+          float bareMetal=1.-smoothstep(.06,.17,high-low);
+          float luminance=dot(texel.rgb,vec3(.2126,.7152,.0722));
+          float fleck=smoothstep(.71,.91,luminance);
+          vec3 axis=normalize(keyAxis()),travel=(uLightRotation*axis-axis)*uRotation;
+          float phase=10.*(uv.x-mid.x)+8.*ray.x+3.6*ray.y+1.2-dot(travel.xy,vec2(3.1,2.));
+          float glint=pow(.5+.5*cos(phase),3./sqrt(uLightSize));
+          float gain=foil*bareMetal*glint*(.018+.24*fleck)*uStrength;
+          pigment+=vec3(min(gain,1.-max(pigment.r,max(pigment.g,pigment.b))));
+        }
       }
       float a=(cover+paperSide)*valid;
       return vec4((pigment*cover+vec3(.64,.615,.60)*paperSide)*valid,a);
