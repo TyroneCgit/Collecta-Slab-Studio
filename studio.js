@@ -24,7 +24,8 @@
   }
   all('[data-icon]').forEach(el => {el.innerHTML = icon(el.dataset.icon);});
   const poses = {angle:[-16,8,-7],front:[0,0,0],back:[180,0,0]};
-  const initialScene = {pose:[...poses.angle],zoom:1,backdrop:'pearl',light:'softbox',strength:1};
+  const defaultLighting = {light:'softbox',strength:1,azimuth:0,elevation:0,size:1};
+  const initialScene = {pose:[...poses.angle],zoom:1,backdrop:'pearl',...defaultLighting};
   const scene = {...initialScene,pose:[...initialScene.pose]};
   const defaultFit = {inset:0,radius:2.2};
   const cardFit = {...defaultFit};
@@ -169,6 +170,9 @@
     if (Array.isArray(value.pose) && value.pose.length === 3 && value.pose.every(Number.isFinite)) scene.pose = [wrap(value.pose[0]),clamp(value.pose[1],-90,90),wrap(value.pose[2])];
     if (Number.isFinite(value.zoom)) scene.zoom = clamp(value.zoom,.55,1.65);
     if (Number.isFinite(value.strength)) scene.strength = clamp(value.strength,.45,1.55);
+    if (Number.isFinite(value.azimuth)) scene.azimuth = clamp(Math.round(value.azimuth),-90,90);
+    if (Number.isFinite(value.elevation)) scene.elevation = clamp(Math.round(value.elevation),-45,45);
+    if (Number.isFinite(value.size)) scene.size = clamp(Math.round(value.size*100)/100,.4,1.8);
     if (['pearl','slate','sand'].includes(value.backdrop)) scene.backdrop = value.backdrop;
     if (['softbox','raking','daylight'].includes(value.light)) scene.light = value.light;
   }
@@ -193,11 +197,70 @@
     scene.zoom = clamp(value,.55,1.65); model.setZoom(scene.zoom); $('#zoom-value').textContent = Math.round(scene.zoom*100)+'%';
     $('#zoom-in').disabled = scene.zoom >= 1.649; $('#zoom-out').disabled = scene.zoom <= .551; if(mark) changed();
   }
-  function syncLighting() {
-    model.setLight(scene.light,scene.strength); model.setBackdrop(scene.backdrop);
-    $('#strength').value = Math.round(scene.strength*100); $('#light-value').textContent = Math.round(scene.strength*100)+'%';
-    for(const attr of ['light','backdrop']) all('[data-'+attr+']').forEach(b => {const selected=b.dataset[attr]===scene[attr]; b.classList.toggle('selected',selected); b.setAttribute('aria-pressed',selected);});
+  function selectOption(attr) {
+    all('[data-'+attr+']').forEach(button => {
+      const selected = button.dataset[attr] === scene[attr];
+      button.classList.toggle('selected',selected);
+      button.setAttribute('aria-pressed',selected);
+    });
+  }
+  function syncBackdrop() {
+    model.setBackdrop(scene.backdrop);selectOption('backdrop');
     $('#stage').classList.toggle('dark-stage',scene.backdrop==='slate');
+  }
+  const lightPad = $('#light-position'), lightPlane = $('.light-plane',lightPad);
+  function syncLighting() {
+    const {light,strength,azimuth,elevation,size} = scene;
+    model.setLight(light,strength,{azimuth,elevation,size});
+    selectOption('light');
+    $('#light-azimuth').value=azimuth;$('#light-elevation').value=elevation;
+    lightPlane.style.setProperty('--light-x',(50+azimuth/1.8)+'%');
+    lightPlane.style.setProperty('--light-y',(50-elevation/.9)+'%');
+    for(const [slider,readout,value] of [['#strength','#light-value',strength],['#light-size','#light-size-value',size]]) {
+      const percent=Math.round(value*100);
+      $(slider).value=percent;$(slider).setAttribute('aria-valuetext',percent+'%');
+      $(readout).textContent=percent+'%';
+    }
+    $('#reset-lighting').disabled=Object.keys(defaultLighting).every(key=>scene[key]===defaultLighting[key]);
+  }
+  function setLightPosition(azimuth,elevation) {
+    scene.azimuth=clamp(Math.round(azimuth),-90,90);
+    scene.elevation=clamp(Math.round(elevation),-45,45);
+    syncLighting();changed();
+  }
+  function positionAtPointer(event) {
+    const plane=lightPlane.getBoundingClientRect();
+    setLightPosition(((event.clientX-plane.left)/plane.width-.5)*180,(.5-(event.clientY-plane.top)/plane.height)*90);
+  }
+  lightPad.onpointerdown=event=>{
+    if(!ready || !event.isPrimary || event.button!==0)return;
+    lightPad.focus({preventScroll:true});lightPad.setPointerCapture(event.pointerId);
+    positionAtPointer(event);
+  };
+  lightPad.onpointermove=event=>{
+    if(lightPad.hasPointerCapture(event.pointerId))positionAtPointer(event);
+  };
+  lightPad.onkeydown=event=>{
+    if(!ready || event.altKey || event.ctrlKey || event.metaKey)return;
+    const directions={ArrowLeft:[-1,0],ArrowRight:[1,0],ArrowDown:[0,-1],ArrowUp:[0,1]};
+    const delta=directions[event.key];
+    if(!delta)return;
+    event.preventDefault();
+    const step=event.shiftKey?10:1;
+    setLightPosition(scene.azimuth+delta[0]*step,scene.elevation+delta[1]*step);
+  };
+  for(const axis of ['azimuth','elevation']) {
+    const field=$('#light-'+axis);
+    field.oninput=()=>{
+      if(!ready || !field.validity.valid || !Number.isFinite(field.valueAsNumber))return;
+      scene[axis]=field.valueAsNumber;syncLighting();changed();
+    };
+    field.onchange=()=>{
+      if(!ready)return;
+      const value=field.valueAsNumber;
+      if(Number.isFinite(value))scene[axis]=clamp(Math.round(value),Number(field.min),Number(field.max));
+      syncLighting();changed();
+    };
   }
   function stopMotion() {
     cancelAnimationFrame(poseFrame); poseFrame=0;
@@ -247,10 +310,13 @@
     if(!ready)return;labelData[el.dataset.field]=el.value;
     if(!labelFrame)labelFrame=requestAnimationFrame(updateLabels);changed();
   }));
-  for(const attr of ['light','backdrop']) all('[data-'+attr+']').forEach(b=>b.onclick=()=>{if(ready){scene[attr]=b.dataset[attr];syncLighting();changed();}});
+  all('[data-light]').forEach(b=>b.onclick=()=>{if(ready){scene.light=b.dataset.light;syncLighting();changed();}});
+  all('[data-backdrop]').forEach(b=>b.onclick=()=>{if(ready){scene.backdrop=b.dataset.backdrop;syncBackdrop();changed();}});
   $('#strength').oninput=e=>{if(ready){scene.strength=e.target.valueAsNumber/100;syncLighting();changed();}};
+  $('#light-size').oninput=e=>{if(ready){scene.size=e.target.valueAsNumber/100;syncLighting();changed();}};
+  $('#reset-lighting').onclick=()=>{if(ready){Object.assign(scene,defaultLighting);syncLighting();changed();}};
   ['yaw','pitch','roll'].forEach((key,i)=>$('#'+key).oninput=e=>{if(!ready)return;stopMotion();scene.pose[i]=e.target.valueAsNumber;syncPose();changed();});
-  $('#reset-scene').onclick=()=>{if(!ready)return;stopMotion();Object.assign(scene,initialScene,{pose:[...poses.angle]});syncLighting();syncPose();zoom(1);};
+  $('#reset-scene').onclick=()=>{if(!ready)return;stopMotion();Object.assign(scene,initialScene,{pose:[...poses.angle]});syncLighting();syncBackdrop();syncPose();zoom(1);};
   document.addEventListener('keydown',e=>{
     if(!ready || e.metaKey || e.ctrlKey || e.altKey || dialog.open || /INPUT|TEXTAREA|SELECT/.test(e.target.tagName))return;
     const key=e.key;
@@ -388,7 +454,7 @@
       saveStatus(draft?'Saved locally':'Local workspace');
     }catch{restoreWarning='The previous draft could not be opened.';}
     bindFieldValues();model.setTextures(images);thumb('front');thumb('back');showQR();updateLabels();
-    syncCardFit();syncPose();syncLighting();zoom(scene.zoom,false);model.render();$('#stage-message').hidden=true;
+    syncCardFit();syncPose();syncLighting();syncBackdrop();zoom(scene.zoom,false);model.render();$('#stage-message').hidden=true;
     ready=true;$('#export-xcode').disabled=false;$('#export-open').disabled=false;if(restoreWarning)notify(restoreWarning);
   }
   init().catch(error=>{saveStatus('Preview unavailable','error');showError('The 3D preview could not start. '+(error.message||String(error)));});

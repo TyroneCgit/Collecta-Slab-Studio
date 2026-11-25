@@ -70,11 +70,29 @@
     </section>
   </div>
   <div id="panel-scene" hidden>
-    <section class="group"><h2>Studio lighting</h2><div class="light-options">
-      <button class="light-option" data-light="softbox"><i class="light-preview softbox"></i><b>Softbox</b><span>A broad, soft reflection</span><i class="check" data-icon="check"></i></button>
-      <button class="light-option" data-light="raking"><i class="light-preview raking"></i><b>Strip light</b><span>A narrow edge highlight</span><i class="check" data-icon="check"></i></button>
-      <button class="light-option" data-light="daylight"><i class="light-preview daylight"></i><b>Daylight</b><span>A large window reflection</span><i class="check" data-icon="check"></i></button>
-    </div><label class="range-label">Light intensity <output id="light-value"></output><input type="range" id="strength" min="45" max="155" step="1"></label></section>
+    <section class="group">
+      <div class="lighting-heading"><h2>Studio lighting</h2><button id="reset-lighting" type="button" disabled>Reset lighting</button></div>
+      <div class="light-options" role="group" aria-label="Light preset">
+        <button class="light-option" data-light="softbox" title="A broad, soft reflection"><i class="light-preview softbox"></i>Softbox</button>
+        <button class="light-option" data-light="raking" title="A narrow edge highlight"><i class="light-preview raking"></i>Strip light</button>
+        <button class="light-option" data-light="daylight" title="A large window reflection"><i class="light-preview daylight"></i>Daylight</button>
+      </div>
+      <div class="lighting-controls">
+        <div class="position-control">
+          <h3 id="light-position-label">Light position</h3>
+          <div id="light-position" role="group" tabindex="0" aria-labelledby="light-position-label" aria-describedby="light-position-help">
+            <div class="light-plane" aria-hidden="true"><span class="light-handle" data-icon="sun"></span></div>
+          </div>
+          <div class="light-coordinates">
+            <label>Horizontal <span><input id="light-azimuth" type="number" min="-90" max="90" step="1" value="0" aria-label="Horizontal light angle in degrees">°</span></label>
+            <label>Elevation <span><input id="light-elevation" type="number" min="-45" max="45" step="1" value="0" aria-label="Light elevation in degrees">°</span></label>
+          </div>
+          <p id="light-position-help">Drag the light or use the arrow keys.</p>
+        </div>
+        <label class="range-label" for="light-size">Source size <output id="light-size-value" for="light-size">100%</output><input id="light-size" type="range" min="40" max="180" value="100" step="1"></label>
+        <label class="range-label" for="strength">Light intensity <output id="light-value" for="strength">100%</output><input id="strength" type="range" min="45" max="155" value="100" step="1"></label>
+      </div>
+    </section>
     <section class="group"><h2>Backdrop</h2><div class="swatches">
       <button data-backdrop="pearl"><i class="pearl"></i>Pearl</button><button data-backdrop="slate"><i class="slate"></i>Slate</button><button data-backdrop="sand"><i class="sand"></i>Sand</button>
     </div></section>

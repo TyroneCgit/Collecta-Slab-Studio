@@ -12,6 +12,25 @@
     sand: [[0.95, 0.925, 0.88], [0.805, 0.768, 0.708]]
   };
   const lightIds = { softbox: 0, raking: 1, daylight: 2 };
+  const lightAxes = {softbox:[-1.29,.38,.83],raking:[-1.33,.43,.26],daylight:[-.83,1.25,.91]};
+  function lightPlacement(name, controls={}) {
+    const bounded=(v,lo,hi,fallback)=>Number.isFinite(v)?Math.min(hi,Math.max(lo,v)):fallback;
+    const azimuth=bounded(controls.azimuth,-90,90,0), elevation=bounded(controls.elevation,-45,45,0);
+    const size=bounded(controls.size,.4,1.8,1),axis=lightAxes[name];
+    if(azimuth===0 && elevation===0) return {rotation:new Float32Array([1,0,0,0,1,0,0,0,1]),dx:0,dy:0,size};
+    const base=Math.atan2(axis[0],axis[2]),rad=Math.PI/180;
+    const cb=Math.cos(base),sb=Math.sin(base),angle=base+azimuth*rad;
+    const ca=Math.cos(angle),sa=Math.sin(angle),ce=Math.cos(elevation*rad),se=Math.sin(elevation*rad);
+    // Pitch about the key's own horizontal axis, then turn the studio around its pole.
+    const rotate=(x,y,z)=>{
+      const localX=cb*x-sb*z,localZ=sb*x+cb*z;
+      const liftedY=ce*y+se*localZ,liftedZ=ce*localZ-se*y;
+      return [ca*localX+sa*liftedZ,liftedY,ca*liftedZ-sa*localX];
+    };
+    const direction=rotate(...axis),len=Math.hypot(...axis);
+    return {rotation:new Float32Array([...rotate(1,0,0),...rotate(0,1,0),...rotate(0,0,1)]),
+      dx:(direction[0]-axis[0])/len,dy:(direction[1]-axis[1])/len,size};
+  }
   const screenVertex = `
     attribute vec2 aPosition;
     void main() { gl_Position=vec4(aPosition,0.,1.); }
@@ -60,6 +79,8 @@
     varying highp vec3 vPoint,vNormal;
     uniform mat3 uRotation;
     uniform float uLight,uStrength;
+    uniform mat3 uLightRotation;
+    uniform float uLightSize;
     uniform vec3 uCardShape;
     uniform vec2 uCardRails;
     uniform sampler2D uFront,uBack,uLabel,uLabelBack;
@@ -91,6 +112,7 @@
       return (1.-smoothstep(-softness,softness,d))*smoothstep(.01,.19,f);
     }
     vec3 room(vec3 d,float rough){
+      d=d*uLightRotation;
       vec3 ambient=mix(vec3(.048,.052,.061),vec3(.38,.415,.455),clamp01(.5+.48*d.y));
       vec3 mainAxis=vec3(-1.29,.38,.83);
       vec2 mainSize=vec2(.21,1.13);
@@ -101,7 +123,7 @@
       float rightFlag=bank(d,vec3(.59,-.11,.79),vec2(.25,1.13),.16+rough);
       ambient*=1.-.87*flag;
       ambient*=1.-.74*rightFlag;
-      float key=bank(d,mainAxis,mainSize,blur+rough);
+      float key=bank(d,mainAxis,mainSize*uLightSize,blur*uLightSize+rough);
       float rim=bank(d,vec3(.97,.09,.27),vec2(.118,1.12),.077+rough);
       float top=bank(d,vec3(.07,.93,-.32),vec2(.94,.23),.14+rough);
       float ceiling=bank(d,vec3(-.21,1.15,.78),vec2(.99,.26),.14+rough);
@@ -206,12 +228,13 @@
       // Internal die shoulders refract a narrow edge of the graded light bank.
       // Its width follows the molded radius rather than a fixed screen-space line.
       vec2 lamp=uLight<.5?vec2(-.58,.82):(uLight<1.5?vec2(-.88,.48):vec2(-.40,.92));
+      lamp=(uLightRotation*vec3(lamp,.95)).xy;
       vec2 offset=(uRotation*vec3(-slope*face,0.)).xy;
       float focus=dot(offset,lamp);
       // Each curved land images a strip bank on one side and its adjacent
       // dark flag on the other. A broad angular transition avoids glint chatter.
       float footprint=min(.13,.055*(length(dx)+length(dy)));
-      float bankMix=smoothstep(-.18-footprint,.20+footprint,focus);
+      float bankMix=smoothstep(-.18*uLightSize-footprint,.20*uLightSize+footprint,focus+.24*(uLightSize-1.));
       vec3 toolLight=mix(vec3(.010,.020,.024),vec3(1.,1.07,1.09),bankMix);
       float exposure=.68*smoothstep(.035,.84,bend)*(.68+.32*clamp01(uStrength));
       traced=mix(traced,toolLight,exposure);
@@ -441,6 +464,7 @@
       this.cardShape=card;
       this.pose=[-16,8,-7].map(v=>v*Math.PI/180);
       this.zoom=1;this.light='softbox';this.strength=1;this.backdrop='pearl';
+      this.lightRig=lightPlacement(this.light);
       this.generation=0;this.frame=0;this.settleTimer=0;
       const options={alpha:true,premultipliedAlpha:true,antialias:true,
         preserveDrawingBuffer:false,depth:true,stencil:false,powerPreference:'high-performance'};
@@ -536,9 +560,10 @@
       this.pose = [yaw, pitch, roll].map(value => value * Math.PI / 180);
       this.request();
     }
-    setLight(name, strength = 1) {
+    setLight(name, strength = 1, controls = {}) {
       this.light = Object.hasOwn(lightIds, name) ? name : 'softbox';
       this.strength = Number.isFinite(strength) ? Math.max(0, Math.min(2, strength)) : 1;
+      this.lightRig = lightPlacement(this.light,controls||{});
       this.request();
     }
     setBackdrop(name) { this.backdrop = Object.hasOwn(palettes, name) ? name : 'pearl'; this.request(); }
@@ -576,7 +601,7 @@
 
     snapshot(){
       return {pose:[...this.pose],zoom:this.zoom,backdrop:this.backdrop,light:this.light,strength:this.strength,
-        cardShape:this.cardShape,textures:{...this.textures}};
+        cardShape:this.cardShape,lightRig:this.lightRig,textures:{...this.textures}};
     }
     framebuffer(width,height,depth){
       const gl=this.gl,fb=gl.createFramebuffer(),tex=this.newTexture();
@@ -629,6 +654,7 @@
       gl.uniform2f(u.Target,tw,th);gl.uniform1f(u.Light,lightIds[state.light]);gl.uniform1f(u.Strength,state.strength);
       gl.uniform3f(u.CardShape,state.cardShape.w/2,state.cardShape.h/2,state.cardShape.r);
       gl.uniform2f(u.CardRails,state.cardShape.horizontalRail,state.cardShape.verticalRail);
+      gl.uniformMatrix3fv(u.LightRotation,false,state.lightRig.rotation);gl.uniform1f(u.LightSize,state.lightRig.size);
       gl.uniformMatrix3fv(u.Rotation,false,rotation);
       textureKeys.forEach((key,i)=>{gl.activeTexture(gl.TEXTURE0+i);gl.bindTexture(gl.TEXTURE_2D,state.textures[key]);});
       gl.enable(gl.CULL_FACE);gl.cullFace(gl.BACK);gl.enable(gl.DEPTH_TEST);gl.depthFunc(gl.LEQUAL);
@@ -796,6 +822,10 @@
         if (fill) {ctx.fillStyle = fill; ctx.fill();}
         ctx.strokeStyle = stroke; ctx.lineWidth = Math.max(.35, weight * scale); ctx.stroke();
       };
+      const rig=this.lightRig,rotation=rig.rotation;
+      const [baseX,baseY]=this.light==='raking' ? [-.85,.25] : [-.55,.82];
+      const lampX=rotation[0]*baseX+rotation[3]*baseY+rotation[6]*.95;
+      const lampY=rotation[1]*baseX+rotation[4]*baseY+rotation[7]*.95;
       // Span each bevel with projected faces. Opposite slopes reflect the strip
       // and the dark flag independently as their apparent widths change with orbit.
       const ledge = (cx,cy,w,h,r,run,rise,flat=false) => {
@@ -803,11 +833,11 @@
         const inner=outline(w/2-run,h/2-run,Math.max(.01,r-run),6);
         const from=outer.map(p=>project(cx+p.x,cy+p.y,1.35*face));
         const to=inner.map(p=>project(cx+p.x,cy+p.y,(1.35+rise)*face));
-        const lamp=lightIds[this.light]===1 ? [-.85,.25] : [-.55,.82];
         for(let i=0;i<outer.length;i++){
           const j=(i+1)%outer.length;
           const n=rotatePoint((outer[i].nx+outer[j].nx)*.5,(outer[i].ny+outer[j].ny)*.5,0,this.pose);
-          const exposure=Math.max(0,Math.min(1,.5+(n[0]*lamp[0]+n[1]*lamp[1])*Math.sign(rise)));
+          const focus=(n[0]*lampX+n[1]*lampY)*Math.sign(rise);
+          const exposure=Math.max(0,Math.min(1,.5+(focus+.24*(rig.size-1))/rig.size));
           const v=Math.round(32+215*exposure);
           ctx.fillStyle='rgba('+v+','+Math.min(255,v+9)+','+Math.min(255,v+10)+','+
             Math.min(.9,.48+.2*this.strength)+')';
@@ -818,13 +848,19 @@
           ctx.fillStyle='rgba(173,202,199,.12)';ctx.fill();
         }
       };
-      const strip=ctx.createLinearGradient(width*.24,height*.29,width*.76,height*.71);
-      const sweep=.5+.24*nx*face-.16*ny*face;
+      const screenAngle=.55*rig.dx-.34*rig.dy,c=Math.cos(screenAngle),s=Math.sin(screenAngle);
+      const bankGradient=(cx,cy,hx,hy)=>{
+        const x=hx*c-hy*s,y=hx*s+hy*c;
+        return ctx.createLinearGradient(width*(cx-x),height*(cy-y),width*(cx+x),height*(cy+y));
+      };
+      const strip=bankGradient(.5,.5,.26,.21);
+      const margin=.16*rig.size;
+      const sweep=Math.max(margin,Math.min(1-margin,.5+.24*nx*face-.16*ny*face+.24*rig.dx-.16*rig.dy));
       strip.addColorStop(0,'rgba(232,252,255,.9)');
-      strip.addColorStop(sweep-.14,'rgba(38,62,68,.72)');
-      strip.addColorStop(sweep-.04,'rgba(33,49,58,.88)');
+      strip.addColorStop(sweep-.14*rig.size,'rgba(38,62,68,.72)');
+      strip.addColorStop(sweep-.04*rig.size,'rgba(33,49,58,.88)');
       strip.addColorStop(sweep,'rgba(250,255,255,.98)');
-      strip.addColorStop(sweep+.095,'rgba(217,239,244,.8)');
+      strip.addColorStop(sweep+.095*rig.size,'rgba(217,239,244,.8)');
       strip.addColorStop(1,'rgba(51,76,80,.68)');
       ring(0,0,size.w,size.h,3.7,-3.12*face,'rgba(38,70,68,.7)',.66,'rgba(181,215,208,.14)');
       ring(0,0,size.w-.32,size.h-.32,3.54,-1.75*face,'rgba(46,76,77,.50)',.38);
@@ -854,9 +890,9 @@
         ctx.restore();
       }
       trace(0,0,size.w,size.h,3.7,3.14*face);
-      const highlight=ctx.createLinearGradient(width*.21,0,width*.81,height*.52);
+      const highlight=bankGradient(.51,.26,.30,.26);
       const gloss = ([.07,.095,.055][lightIds[this.light]] + (1-Math.abs(nz))*.21)*this.strength;
-      const spread=[.09,.046,.16][lightIds[this.light]];
+      const spread=[.09,.046,.16][lightIds[this.light]]*rig.size;
       highlight.addColorStop(0,'rgba(255,255,255,0)');
       highlight.addColorStop(sweep-spread,'rgba(250,255,255,0)');
       highlight.addColorStop(sweep-spread*.52,'rgba(250,255,255,'+gloss+')');

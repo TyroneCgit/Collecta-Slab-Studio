@@ -2,7 +2,11 @@
 
 A local graded-card editor for macOS and the browser. Add front and back artwork, edit the grading label, and adjust the edge trim and corner radius in the live 3D preview. A procedurally drawn demo card is included.
 
-The v3 case has polished glass bevels and a slight aqua tint through its thick edges. Choose **Scene → Strip light** and drag the slab to see the reflections travel along the divider, the card pocket, and the outer rim. The v3 desktop app keeps a separate local draft from Studio 2.
+The v3 case has polished glass bevels and a slight aqua tint through its thick edges. The v3 desktop app keeps a separate local draft from Studio 2.
+
+## Light the case
+
+In **Scene → Studio lighting**, choose **Strip light** for a narrow reflection along the divider and rails. Drag the dot in **Light position** to move the reflection while keeping the slab still. Use the arrow keys for one-degree adjustments, or enter an angle directly. **Source size** changes the width of the reflection and **Light intensity** sets its brightness. **Reset lighting** restores the default softbox.
 
 ## Run the editor
 
@@ -15,4 +19,4 @@ open "build/Slab Studio 3.app"
 
 ## Export a slab
 
-Choose **Export for Xcode** to save a self-contained USDZ. Drag the file into your Xcode project and select your app target. Use the adjacent arrow for GLB or a PNG of the current view. Imported artwork and drafts stay on the device.
+Choose **Export for Xcode** to save a self-contained USDZ. Drag the file into your Xcode project and select your app target. Use the adjacent arrow for GLB or PNG. PNG captures the current view and lighting. USDZ and GLB include the case geometry, glass materials and artwork, and use the receiving viewer’s lighting. Imported artwork and drafts stay on the device.
