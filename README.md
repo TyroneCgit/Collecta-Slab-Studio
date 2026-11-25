@@ -8,6 +8,8 @@ The v3 case has polished glass bevels and a slight aqua tint through its thick e
 
 In **Scene → Studio lighting**, choose **Strip light** for a narrow reflection along the divider and rails. Drag the dot in **Light position** to move the reflection while keeping the slab still. Use the arrow keys for one-degree adjustments, or enter an angle directly. **Source size** changes the width of the reflection and **Light intensity** sets its brightness. **Reset lighting** restores the default softbox.
 
+In **Scene → Backdrop**, choose **Custom** to set a solid color or a two-color gradient. Click a color swatch or enter a hex value. The backdrop appears in the preview and in PNGs exported with the background included.
+
 ## Run the editor
 
 Open `index.html` in a browser with WebGL support, or build the macOS app with Xcode Command Line Tools installed.

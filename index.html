@@ -93,9 +93,29 @@
         <label class="range-label" for="strength">Light intensity <output id="light-value" for="strength">100%</output><input id="strength" type="range" min="45" max="155" value="100" step="1"></label>
       </div>
     </section>
-    <section class="group"><h2>Backdrop</h2><div class="swatches">
-      <button data-backdrop="pearl"><i class="pearl"></i>Pearl</button><button data-backdrop="slate"><i class="slate"></i>Slate</button><button data-backdrop="sand"><i class="sand"></i>Sand</button>
-    </div></section>
+    <section class="group"><h2>Backdrop</h2>
+      <div class="swatches" role="group" aria-label="Backdrop">
+        <button data-backdrop="pearl"><i class="pearl"></i>Pearl</button><button data-backdrop="slate"><i class="slate"></i>Slate</button><button data-backdrop="sand"><i class="sand"></i>Sand</button>
+        <button data-backdrop="custom" aria-controls="custom-backdrop"><i id="custom-swatch"></i>Custom</button>
+      </div>
+      <div id="custom-backdrop" hidden>
+        <div class="backdrop-modes" role="group" aria-label="Custom backdrop style">
+          <button data-backdrop-mode="solid" type="button">Solid</button><button data-backdrop-mode="gradient" type="button">Gradient</button>
+        </div>
+        <div class="color-stop">
+          <label for="backdrop-start-hex" id="backdrop-start-label">Color</label>
+          <div class="color-entry"><input id="backdrop-start-color" type="color" value="#eceaf2" aria-label="Choose backdrop color">
+            <input id="backdrop-start-hex" type="text" spellcheck="false" autocomplete="off" autocapitalize="characters" value="#ECEAF2" aria-describedby="backdrop-start-error"></div>
+          <p class="color-error" id="backdrop-start-error" hidden>Enter a hex color such as #8CF or #88CCFF.</p>
+        </div>
+        <div class="color-stop" id="backdrop-end-stop" hidden>
+          <label for="backdrop-end-hex">Bottom right</label>
+          <div class="color-entry"><input id="backdrop-end-color" type="color" value="#c2bacc" aria-label="Choose bottom-right color">
+            <input id="backdrop-end-hex" type="text" spellcheck="false" autocomplete="off" autocapitalize="characters" value="#C2BACC" aria-describedby="backdrop-end-error"></div>
+          <p class="color-error" id="backdrop-end-error" hidden>Enter a hex color such as #8CF or #88CCFF.</p>
+        </div>
+      </div>
+    </section>
     <section class="group"><h2>Orientation</h2><div class="angles">
       <label class="range-label">Yaw<output id="yaw-value"></output><input id="yaw" type="range" min="-180" max="180" step="1"></label>
       <label class="range-label">Pitch<output id="pitch-value"></output><input id="pitch" type="range" min="-90" max="90" step="1"></label>

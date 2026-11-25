@@ -25,7 +25,8 @@
   all('[data-icon]').forEach(el => {el.innerHTML = icon(el.dataset.icon);});
   const poses = {angle:[-16,8,-7],front:[0,0,0],back:[180,0,0]};
   const defaultLighting = {light:'softbox',strength:1,azimuth:0,elevation:0,size:1};
-  const initialScene = {pose:[...poses.angle],zoom:1,backdrop:'pearl',...defaultLighting};
+  const defaultBackdrop = Object.freeze({mode:'solid',start:'#ECEAF2',end:'#C2BACC'});
+  const initialScene = {pose:[...poses.angle],zoom:1,backdrop:'pearl',customBackdrop:defaultBackdrop,...defaultLighting};
   const scene = {...initialScene,pose:[...initialScene.pose]};
   const defaultFit = {inset:0,radius:2.2};
   const cardFit = {...defaultFit};
@@ -173,7 +174,14 @@
     if (Number.isFinite(value.azimuth)) scene.azimuth = clamp(Math.round(value.azimuth),-90,90);
     if (Number.isFinite(value.elevation)) scene.elevation = clamp(Math.round(value.elevation),-45,45);
     if (Number.isFinite(value.size)) scene.size = clamp(Math.round(value.size*100)/100,.4,1.8);
-    if (['pearl','slate','sand'].includes(value.backdrop)) scene.backdrop = value.backdrop;
+    if (['pearl','slate','sand','custom'].includes(value.backdrop)) scene.backdrop = value.backdrop;
+    if (value.customBackdrop) {
+      scene.customBackdrop={
+        mode:value.customBackdrop.mode==='gradient'?'gradient':'solid',
+        start:hexColor(value.customBackdrop.start)||defaultBackdrop.start,
+        end:hexColor(value.customBackdrop.end)||defaultBackdrop.end
+      };
+    }
     if (['softbox','raking','daylight'].includes(value.light)) scene.light = value.light;
   }
   function syncPose() {
@@ -204,9 +212,81 @@
       button.setAttribute('aria-pressed',selected);
     });
   }
+  function hexColor(value) {
+    if(typeof value!=='string')return null;
+    const match=/^#?([\da-f]{3}|[\da-f]{6})$/i.exec(value.trim());
+    if(!match)return null;
+    const digits=match[1].toUpperCase();
+    return '#'+(digits.length===3?[...digits].map(c=>c+c).join(''):digits);
+  }
+  function labelInk(hex) {
+    const rgb=hex.slice(1).match(/../g).map(pair=>{
+      const c=parseInt(pair,16)/255;
+      return c<=.04045?c/12.92:((c+.055)/1.055)**2.4;
+    });
+    return .2126*rgb[0]+.7152*rgb[1]+.0722*rgb[2]>.179?'#08080a':'#ffffff';
+  }
   function syncBackdrop() {
-    model.setBackdrop(scene.backdrop);selectOption('backdrop');
-    $('#stage').classList.toggle('dark-stage',scene.backdrop==='slate');
+    const {mode,start,end}=scene.customBackdrop, gradient=mode==='gradient', custom=scene.backdrop==='custom';
+    model.setBackdrop(scene.backdrop,scene.customBackdrop);selectOption('backdrop');
+    const stage=$('#stage');
+    stage.classList.toggle('dark-stage',scene.backdrop==='slate');
+    stage.classList.toggle('custom-stage',custom);
+    stage.style.setProperty('--tag-ink',labelInk(start));
+    $('#custom-swatch').style.background=gradient?'linear-gradient(to bottom right,'+start+','+end+')':start;
+    $('#custom-backdrop').hidden=!custom;
+    $('#backdrop-end-stop').hidden=!gradient;
+    $('#backdrop-start-label').textContent=gradient?'Top left':'Color';
+    $('#backdrop-start-color').setAttribute('aria-label',gradient?'Choose top-left color':'Choose backdrop color');
+    all('[data-backdrop-mode]').forEach(button=>button.setAttribute('aria-pressed',button.dataset.backdropMode===mode));
+    for(const stop of ['start','end']) {
+      const hex=$('#backdrop-'+stop+'-hex');
+      $('#backdrop-'+stop+'-color').value=scene.customBackdrop[stop];
+      if(!hex.dataset.editing)hex.value=scene.customBackdrop[stop];
+    }
+  }
+  function updateBackdrop(values) {
+    scene.customBackdrop={...scene.customBackdrop,...values};
+    syncBackdrop();changed();
+  }
+  function showColorError(stop,invalid) {
+    const hex=$('#backdrop-'+stop+'-hex');
+    hex.setAttribute('aria-invalid',invalid);
+    $('#backdrop-'+stop+'-error').hidden=!invalid;
+  }
+  all('[data-backdrop-mode]').forEach(button=>button.onclick=()=>{
+    if(ready)updateBackdrop({mode:button.dataset.backdropMode});
+  });
+  for(const stop of ['start','end']) {
+    const hex=$('#backdrop-'+stop+'-hex'),picker=$('#backdrop-'+stop+'-color');
+    picker.oninput=()=>{
+      if(!ready)return;
+      delete hex.dataset.editing;showColorError(stop,false);
+      updateBackdrop({[stop]:hexColor(picker.value)});
+    };
+    picker.onchange=picker.oninput;
+    hex.oninput=()=>{
+      if(!ready)return;
+      hex.dataset.editing='true';
+      const color=hexColor(hex.value);
+      showColorError(stop,!color && !/^#?[\da-f]{0,5}$/i.test(hex.value.trim()));
+      if(color && color!==scene.customBackdrop[stop])updateBackdrop({[stop]:color});
+    };
+    function finishHex() {
+      if(!hex.dataset.editing)return;
+      const color=hexColor(hex.value);
+      showColorError(stop,!color);
+      if(!color)return;
+      delete hex.dataset.editing;hex.value=color;
+    }
+    hex.onblur=finishHex;
+    hex.onkeydown=event=>{
+      if(event.key==='Enter'){event.preventDefault();finishHex();}
+      if(event.key==='Escape'){
+        event.preventDefault();delete hex.dataset.editing;
+        hex.value=scene.customBackdrop[stop];showColorError(stop,false);
+      }
+    };
   }
   const lightPad = $('#light-position'), lightPlane = $('.light-plane',lightPad);
   function syncLighting() {
@@ -316,7 +396,14 @@
   $('#light-size').oninput=e=>{if(ready){scene.size=e.target.valueAsNumber/100;syncLighting();changed();}};
   $('#reset-lighting').onclick=()=>{if(ready){Object.assign(scene,defaultLighting);syncLighting();changed();}};
   ['yaw','pitch','roll'].forEach((key,i)=>$('#'+key).oninput=e=>{if(!ready)return;stopMotion();scene.pose[i]=e.target.valueAsNumber;syncPose();changed();});
-  $('#reset-scene').onclick=()=>{if(!ready)return;stopMotion();Object.assign(scene,initialScene,{pose:[...poses.angle]});syncLighting();syncBackdrop();syncPose();zoom(1);};
+  $('#reset-scene').onclick=()=>{
+    if(!ready)return;
+    stopMotion();Object.assign(scene,initialScene,{pose:[...poses.angle]});
+    for(const stop of ['start','end']){
+      delete $('#backdrop-'+stop+'-hex').dataset.editing;showColorError(stop,false);
+    }
+    syncLighting();syncBackdrop();syncPose();zoom(1);
+  };
   document.addEventListener('keydown',e=>{
     if(!ready || e.metaKey || e.ctrlKey || e.altKey || dialog.open || /INPUT|TEXTAREA|SELECT/.test(e.target.tagName))return;
     const key=e.key;

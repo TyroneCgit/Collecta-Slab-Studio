@@ -11,6 +11,10 @@
     slate: [[0.31, 0.333, 0.38], [0.146, 0.158, 0.192]],
     sand: [[0.95, 0.925, 0.88], [0.805, 0.768, 0.708]]
   };
+  function backdropRGB(hex, fallback) {
+    const color = typeof hex === 'string' && /^#[0-9a-f]{6}$/i.test(hex) ? hex : fallback;
+    return [1,3,5].map(i => parseInt(color.slice(i,i+2),16)/255);
+  }
   const lightIds = { softbox: 0, raking: 1, daylight: 2 };
   const lightAxes = {softbox:[-1.29,.38,.83],raking:[-1.33,.43,.26],daylight:[-.83,1.25,.91]};
   function lightPlacement(name, controls={}) {
@@ -52,15 +56,22 @@
   `;
   const stageSource = `
     uniform vec2 uFull, uOrigin;
-    uniform float uScale, uFloor, uContactX, uContactSpan, uClear;
+    uniform float uScale, uFloor, uContactX, uContactSpan, uClear, uCustomBackdrop;
     uniform vec3 uPale, uDeep;
     vec3 toLinear(vec3 c){return pow(max(c,vec3(0.)),vec3(2.2));}
     vec3 toDisplay(vec3 c){return pow(max(c,vec3(0.)),vec3(1./2.2));}
     vec2 screenPoint(){return (gl_FragCoord.xy+uOrigin-.5*uFull)/uScale;}
     vec3 stage(vec2 xy){
       vec2 uv=xy*uScale/uFull+.5;
-      vec2 k=(uv-vec2(.35,.73))*vec2(1.95,1.7);
-      float ramp=clamp(.18+.40*(1.-uv.y)+.41*uv.x-.21*exp(-dot(k,k)),0.,1.);
+      float ramp;
+      if(uCustomBackdrop>.5){
+        // Project onto the full-image diagonal, including for refraction and tiled exports.
+        vec2 span=uFull/max(uFull.x,uFull.y), pos=vec2(uv.x,1.-uv.y)*span;
+        ramp=clamp(dot(pos,span)/dot(span,span),0.,1.);
+      }else{
+        vec2 k=(uv-vec2(.35,.73))*vec2(1.95,1.7);
+        ramp=clamp(.18+.40*(1.-uv.y)+.41*uv.x-.21*exp(-dot(k,k)),0.,1.);
+      }
       vec3 base=mix(uPale,uDeep,ramp);
       float fy=xy.y-uFloor;
       vec2 near=vec2((xy.x-uContactX)/uContactSpan,(fy+.34)/1.17);
@@ -464,6 +475,7 @@
       this.cardShape=card;
       this.pose=[-16,8,-7].map(v=>v*Math.PI/180);
       this.zoom=1;this.light='softbox';this.strength=1;this.backdrop='pearl';
+      this.backdropColors=palettes.pearl;
       this.lightRig=lightPlacement(this.light);
       this.generation=0;this.frame=0;this.settleTimer=0;
       const options={alpha:true,premultipliedAlpha:true,antialias:true,
@@ -566,7 +578,18 @@
       this.lightRig = lightPlacement(this.light,controls||{});
       this.request();
     }
-    setBackdrop(name) { this.backdrop = Object.hasOwn(palettes, name) ? name : 'pearl'; this.request(); }
+    setBackdrop(name, customBackdrop) {
+      if (name === 'custom') {
+        this.backdrop = name;
+        const start = backdropRGB(customBackdrop?.start, '#ECEAF2');
+        const end = customBackdrop?.mode === 'gradient' ? backdropRGB(customBackdrop.end, '#C2BACC') : start;
+        this.backdropColors = [start,end];
+      } else {
+        this.backdrop = Object.hasOwn(palettes,name) ? name : 'pearl';
+        this.backdropColors = palettes[this.backdrop];
+      }
+      this.request();
+    }
     setZoom(value) { this.zoom = Number.isFinite(value) ? Math.max(.25, Math.min(4, value)) : 1; this.request(); }
 
     request(){
@@ -601,7 +624,7 @@
 
     snapshot(){
       return {pose:[...this.pose],zoom:this.zoom,backdrop:this.backdrop,light:this.light,strength:this.strength,
-        cardShape:this.cardShape,lightRig:this.lightRig,textures:{...this.textures}};
+        cardShape:this.cardShape,lightRig:this.lightRig,backdropColors:this.backdropColors,textures:{...this.textures}};
     }
     framebuffer(width,height,depth){
       const gl=this.gl,fb=gl.createFramebuffer(),tex=this.newTexture();
@@ -638,7 +661,7 @@
       gl.bindFramebuffer(gl.FRAMEBUFFER,target?.fb||null);gl.viewport(0,0,tw,th);
       gl.disable(gl.BLEND);gl.disable(gl.SCISSOR_TEST);gl.disable(gl.CULL_FACE);gl.disable(gl.DEPTH_TEST);
       gl.depthMask(true);gl.clearDepth(1);gl.clear(gl.DEPTH_BUFFER_BIT);
-      const palette=palettes[state.backdrop],rotation=new Float32Array([
+      const palette=state.backdropColors,rotation=new Float32Array([
         ...rotatePoint(1,0,0,state.pose),...rotatePoint(0,1,0,state.pose),...rotatePoint(0,0,1,state.pose)]);
       const uniforms=shader=>{
         gl.useProgram(shader.handle);
@@ -647,6 +670,7 @@
         gl.uniform1f(u.Scale,view.scale*samples);gl.uniform1f(u.Floor,view.floor);
         gl.uniform1f(u.ContactX,view.contactX);gl.uniform1f(u.ContactSpan,view.contactSpan);
         gl.uniform3fv(u.Pale,palette[0]);gl.uniform3fv(u.Deep,palette[1]);gl.uniform1f(u.Clear,+clear);
+        gl.uniform1f(u.CustomBackdrop,state.backdrop==='custom'?1:0);
       };
       uniforms(this.stageProgram);this.quad();
       uniforms(this.glassProgram);
@@ -792,9 +816,14 @@
       ctx.clearRect(0, 0, width, height);
       const css = rgb => 'rgb(' + rgb.map(v => Math.round(v * 255)).join(',') + ')';
       if (!transparent) {
-        const colors = palettes[this.backdrop], bg = ctx.createLinearGradient(0, 0, width, height);
-        bg.addColorStop(0, css(colors[0])); bg.addColorStop(1, css(colors[1]));
-        ctx.fillStyle = bg; ctx.fillRect(0, 0, width, height);
+        const [start,end] = this.backdropColors;
+        if (start === end) ctx.fillStyle = css(start);
+        else {
+          const gradient = ctx.createLinearGradient(0,0,width,height);
+          gradient.addColorStop(0,css(start)); gradient.addColorStop(1,css(end));
+          ctx.fillStyle = gradient;
+        }
+        ctx.fillRect(0, 0, width, height);
         ctx.save(); ctx.translate(width / 2 + contactX * scale * .35, height / 2 - (floor - 1) * scale);
         ctx.scale(44 * scale, 4.1 * scale);
         const shade = ctx.createRadialGradient(0, 0, 0, 0, 0, 1);
