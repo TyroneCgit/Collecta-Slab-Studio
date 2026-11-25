@@ -17,12 +17,12 @@ final class StudioApp: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavi
         window = NSWindow(contentRect: NSRect(origin: .zero, size: size),
                           styleMask: [.titled, .closable, .miniaturizable, .resizable],
                           backing: .buffered, defer: false)
-        window.title = "Slab Studio 3"
+        window.title = "Slab Studio 4"
         window.contentMinSize = NSSize(width: min(800, size.width), height: min(560, size.height))
         window.isReleasedWhenClosed = false
         window.delegate = self
         window.center()
-        window.setFrameAutosaveName("SlabStudioEditor3")
+        window.setFrameAutosaveName("SlabStudioEditor4")
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
 
@@ -41,7 +41,7 @@ final class StudioApp: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavi
         let controller = config.userContentController
         controller.addUserScript(WKUserScript(source: StudioBridge.bootstrap, injectionTime: .atDocumentStart,
                                               forMainFrameOnly: true))
-        controller.addScriptMessageHandler(bridge, contentWorld: .page, name: "slab3")
+        controller.addScriptMessageHandler(bridge, contentWorld: .page, name: "slab4")
         web = WKWebView(frame: .zero, configuration: config)
         web.navigationDelegate = self
         web.allowsLinkPreview = false
@@ -49,7 +49,7 @@ final class StudioApp: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavi
         window.makeFirstResponder(web)
 
         let policy = #"[{"trigger":{"url-filter":"^http"},"action":{"type":"block"}},{"trigger":{"url-filter":"^ws"},"action":{"type":"block"}},{"trigger":{"url-filter":"^ftp"},"action":{"type":"block"}}]"#
-        WKContentRuleListStore.default().compileContentRuleList(forIdentifier: "SlabStudio3OfflineV1",
+        WKContentRuleListStore.default().compileContentRuleList(forIdentifier: "SlabStudio4OfflineV1",
             encodedContentRuleList: policy) { [weak self] rules, _ in
             guard let self else { return }
             guard let rules else {
@@ -78,7 +78,7 @@ final class StudioApp: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavi
     func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
         loaded = false
         if let lastRecovery, Date().timeIntervalSince(lastRecovery) < 10 {
-            showError("The preview could not restart.", "Close Slab Studio 3 and open it again to restore the latest saved draft.")
+            showError("The preview could not restart.", "Close Slab Studio 4 and open it again to restore the latest saved draft.")
             return
         }
         lastRecovery = Date()
@@ -129,11 +129,11 @@ final class StudioApp: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavi
     private func createMenus() {
         let menu = NSMenu()
         let appMenu = NSMenu()
-        menu.addItem(withTitle: "Slab Studio 3", action: nil, keyEquivalent: "").submenu = appMenu
-        appMenu.addItem(withTitle: "About Slab Studio 3", action: #selector(NSApp.orderFrontStandardAboutPanel(_:)), keyEquivalent: "")
+        menu.addItem(withTitle: "Slab Studio 4", action: nil, keyEquivalent: "").submenu = appMenu
+        appMenu.addItem(withTitle: "About Slab Studio 4", action: #selector(NSApp.orderFrontStandardAboutPanel(_:)), keyEquivalent: "")
         appMenu.addItem(.separator())
-        appMenu.addItem(withTitle: "Hide Slab Studio 3", action: #selector(NSApp.hide(_:)), keyEquivalent: "h")
-        appMenu.addItem(withTitle: "Quit Slab Studio 3", action: #selector(NSApp.terminate(_:)), keyEquivalent: "q")
+        appMenu.addItem(withTitle: "Hide Slab Studio 4", action: #selector(NSApp.hide(_:)), keyEquivalent: "h")
+        appMenu.addItem(withTitle: "Quit Slab Studio 4", action: #selector(NSApp.terminate(_:)), keyEquivalent: "q")
         let file = NSMenu(title: "File")
         menu.addItem(withTitle: "File", action: nil, keyEquivalent: "").submenu = file
         file.addItem(withTitle: "Export Asset…", action: #selector(openExport(_:)), keyEquivalent: "e").target = self

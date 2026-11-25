@@ -25,7 +25,7 @@
   const poses = {angle:[-16,8,-7],front:[0,0,0],back:[180,0,0]};
   const defaultLighting = {light:'softbox',strength:1,azimuth:0,elevation:0,size:1};
   const defaultBackdrop = Object.freeze({mode:'solid',start:'#ECEAF2',end:'#C2BACC'});
-  const initialScene = {pose:[...poses.angle],zoom:1,backdrop:'pearl',customBackdrop:defaultBackdrop,...defaultLighting};
+  const initialScene = {pose:[...poses.angle],zoom:1,backdrop:'slate',customBackdrop:defaultBackdrop,...defaultLighting};
   const scene = {...initialScene,pose:[...initialScene.pose]};
   const defaultFit = {inset:0,radius:2.2};
   const cardFit = {...defaultFit};
@@ -65,10 +65,24 @@
   async function browserDraft(draft) {
     const db = await database();
     return new Promise((resolve,reject) => {
-      const tx = db.transaction('projects',draft ? 'readwrite' : 'readonly');
+      // Keep the v4 copy and the original draft independent in this browser.
+      const tx = db.transaction('projects','readwrite');
       const store = tx.objectStore('projects');
-      const request = draft ? store.put(draft,'current') : store.get('current');
-      tx.oncomplete = () => resolve(request.result);
+      let restored;
+      if (draft) store.put(draft,'current-v4');
+      else {
+        const current = store.get('current-v4');
+        current.onsuccess = () => {
+          restored = current.result;
+          if (restored !== undefined) return;
+          const previous = store.get('current');
+          previous.onsuccess = () => {
+            restored = previous.result;
+            if (restored?.version === 1) store.add(restored,'current-v4');
+          };
+        };
+      }
+      tx.oncomplete = () => resolve(restored);
       tx.onabort = tx.onerror = () => reject(tx.error);
     });
   }

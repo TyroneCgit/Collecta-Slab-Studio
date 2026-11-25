@@ -3,7 +3,13 @@
   'use strict';
 
   const size = { w: 80.26, h: 135.13, d: 6.86 };
-  const card = { x: 0, y: -13.7, w: 63.5, h: 88.9, r: 2.2, horizontalRail: 27.5, verticalRail: 35.5 };
+  const card = { x: 0, y: -13.7, w: 63.5, h: 88.9, r: 2.2, horizontalRail: 27.5, verticalRail: 39.4 };
+  const pocket = Object.freeze({
+    sideGap:1.35, endGap:1.55, radius:.68,
+    sideOffset:.54, endOffset:.60, sideHalfWidth:.58, endHalfWidth:.64,
+    sideHeight:.32, endHeight:.36,
+    dividerY:37.63, dividerHalfWidth:36.67, dividerHalfHeight:.94, dividerRadius:.46
+  });
   const label = { x: 0, y: 52, w: 68.6, h: 20.4, r: 0.4 };
   const textureKeys = ['front', 'back', 'label', 'labelBack'];
   const palettes = {
@@ -96,7 +102,7 @@
     uniform vec2 uCardRails;
     uniform sampler2D uFront,uBack,uLabel,uLabelBack;
     ${stageSource}
-    const float eta=1.52;
+    const float eta=1.49;
     const vec2 shell=vec2(40.13,67.565), cardSize=vec2(31.75,44.45), labelSize=vec2(34.3,10.2);
     const vec2 cardCenter=vec2(0.,-13.7), labelCenter=vec2(0.,52.);
     float clamp01(float n){return clamp(n,0.,1.);}
@@ -129,9 +135,9 @@
       d=d*uLightRotation;
       vec3 ambient=mix(vec3(.048,.052,.061),vec3(.38,.415,.455),clamp01(.5+.48*d.y));
       vec2 mainSize=vec2(.21,1.13);
-      float power=3.5,blur=.082;
-      if(uLight>.5&&uLight<1.5){mainSize=vec2(.13,1.07);power=4.55;blur=.055;}
-      if(uLight>1.5){mainSize=vec2(.76,.66);power=2.82;blur=.16;}
+      float power=2.75,blur=.12;
+      if(uLight>.5&&uLight<1.5){mainSize=vec2(.13,1.07);power=3.65;blur=.085;}
+      if(uLight>1.5){mainSize=vec2(.76,.66);power=2.35;blur=.19;}
       float flag=bank(d,vec3(-.33,.10,.92),vec2(.36,1.1),.22+rough);
       float rightFlag=bank(d,vec3(.59,-.11,.79),vec2(.25,1.13),.16+rough);
       ambient*=1.-.87*flag;
@@ -141,8 +147,8 @@
       float top=bank(d,vec3(.07,.93,-.32),vec2(.94,.23),.14+rough);
       float ceiling=bank(d,vec3(-.21,1.15,.78),vec2(.99,.26),.14+rough);
       float back=bank(d,vec3(-.51,-.13,-.91),vec2(.35,.89),.22+rough);
-      return (ambient+power*key*vec3(1.,.99,.975)+3.18*rim*vec3(.92,.98,1.)+
-        1.78*top+1.62*ceiling+.65*back)*(.39+.63*uStrength);
+      return (ambient+power*key*vec3(1.,.99,.975)+2.08*rim*vec3(.95,.98,1.)+
+        1.38*top+1.30*ceiling+.48*back)*(.39+.63*uStrength);
     }
     // Closed opposite wall. Broad planes return exact intersections; the few
     // corner rays use a bracketed, monotonic root on a convex rounded cap.
@@ -201,60 +207,118 @@
       float band=smoothstep(-ease,ease,d.z+run)-smoothstep(-ease,ease,d.z-run);
       return d.xy*(height/(2.*run))*band;
     }
-    vec2 retainingGradient(vec2 p,vec2 dx,vec2 dy){
-      vec3 weld=rounded(p,shell-vec2(2.95),1.94);
-      weld=vec3(-sign(weld.z)*weld.xy,abs(weld.z)-.34);
-      vec3 cavity=rounded(p-vec2(0.,-14.95),vec2(36.52,49.25),1.64);
-      vec3 cardWell=rounded(p-cardCenter,uCardShape.xy+vec2(1.05),max(0.,uCardShape.z-.1));
-      vec3 innerLip=rounded(p-cardCenter,uCardShape.xy+vec2(.32),max(0.,uCardShape.z-.83));
-      vec3 labelWell=rounded(p-labelCenter,labelSize+vec2(1.01),1.24);
-      vec3 crossbar=rounded(p-vec2(0.,37.63),vec2(36.67,.94),.18);
-      vec2 cp=p-cardCenter;
-      vec3 horizontal=rounded(vec2(cp.x,abs(cp.y)-uCardShape.y-1.79),vec2(uCardRails.x,.43),.13);
-      horizontal.y*=sign(cp.y);
-      vec3 vertical=rounded(vec2(abs(cp.x)-uCardShape.x-1.53,cp.y),vec2(.41,uCardRails.y),.13);
-      vertical.x*=sign(cp.x);
-      return shoulder(weld,.18,.32,dx,dy)+shoulder(cavity,.30,.43,dx,dy)+
-        shoulder(cardWell,.27,.64,dx,dy)+shoulder(innerLip,.13,-.17,dx,dy)+shoulder(labelWell,.26,.54,dx,dy)+
-        shoulder(crossbar,.22,.51,dx,dy)+shoulder(horizontal,.15,.36,dx,dy)+shoulder(vertical,.15,.33,dx,dy);
+    float grainHash(vec2 cell){
+      vec3 q=fract(cell.xyx*vec3(.1031,.11369,.13787));
+      q+=dot(q,q.yzx+19.19);
+      return fract((q.x+q.y)*q.z);
+    }
+    // Filter the two fixed tool-grain scales independently. Nothing moves in screen space.
+    vec3 toolGrain(vec2 p,float pitch,float footprint){
+      vec2 q=p/pitch,i=floor(q),f=fract(q),v=f*f*(3.-2.*f);
+      float a=grainHash(i),b=grainHash(i+vec2(1.,0.)),c=grainHash(i+vec2(0.,1.)),d=grainHash(i+1.);
+      float grain=mix(mix(a,b,v.x),mix(c,d,v.x),v.y)-.5;
+      vec2 slope=6.*f*(1.-f)*vec2(mix(b-a,d-c,v.y),mix(c-a,d-b,v.x));
+      return vec3(grain,slope)*(1.-smoothstep(.38,1.18,footprint/pitch));
+    }
+    // A shallow drafted depression spans the bridge between the divider and the pocket.
+    // Differentiate the continuous profile so the highlight rolls into the two end shoulders.
+    vec3 draftedBridge(vec2 xy){
+      float top=${pocket.dividerY}-.55,bottom=cardCenter.y+uCardShape.y+${pocket.endGap}+.08;
+      float span=top-bottom,t=clamp01((top-xy.y)/span),c=t*(1.-t);
+      float bell=16.*c*c*(1.18-.36*t);
+      float db=32.*c*(1.-2.*t)*(1.18-.36*t)-5.76*c*c;
+      float inset=uCardShape.x+${pocket.sideGap}-36.25,w=36.25+t*inset;
+      float u=clamp01((abs(xy.x)-w+.75)/1.5),fade=1.-u*u*(3.-2.*u);
+      float df=4.*u*(1.-u);
+      return vec3(.58*bell*df*sign(xy.x),.58*(db*fade+bell*df*inset)/span,bell*fade);
     }
     vec3 mold(vec3 base,vec3 p,vec3 ray,float maxT,float face,vec2 dx,vec2 dy,float weight){
       float t=(face*1.48-p.z)/(sign(ray.z+.0000001)*max(abs(ray.z),.00001));
       if(t<=0. || t>=maxT) return base;
-      vec2 xy=p.xy+ray.xy*t;
-      float boundary=boxDist(xy,shell,3.7), cw=boxDist(xy-cardCenter,uCardShape.xy,max(0.,uCardShape.z-.04)), lw=boxDist(xy-labelCenter,labelSize,.42);
-      if(boundary>-.78||min(cw,lw)<-.78)return base;
-      vec2 slope=retainingGradient(xy,dx,dy);
-      vec3 n=normalize(vec3(-slope,face));
+      vec2 xy=p.xy+ray.xy*t,cp=xy-cardCenter;
+      float boundary=boxDist(xy,shell,3.7);
+      float cardEdge=boxDist(cp,uCardShape.xy,uCardShape.z);
+      float labelEdge=boxDist(xy-labelCenter,labelSize,.42);
+      if(boundary>-.48 || min(cardEdge,labelEdge)<-.70)return base;
+      vec3 well=rounded(cp,uCardShape.xy+vec2(${pocket.sideGap},${pocket.endGap}),${pocket.radius});
+      vec3 labelWell=rounded(xy-labelCenter,labelSize+vec2(1.01),1.24);
+      vec3 divider=rounded(xy-vec2(0.,${pocket.dividerY}),vec2(${pocket.dividerHalfWidth},${pocket.dividerHalfHeight}),${pocket.dividerRadius});
+      vec3 weld=rounded(xy,shell-vec2(2.95),1.94);
+      weld=vec3(-sign(weld.z)*weld.xy,abs(weld.z)-.27);
+      vec3 cavity=rounded(xy-vec2(0.,-14.95),vec2(36.52,49.25),1.64);
+      vec3 bridge=draftedBridge(xy);
+      vec2 slope=bridge.xy+shoulder(weld,.23,.24,dx,dy)+shoulder(cavity,.46,.30,dx,dy)+
+        shoulder(well,.26,.48,dx,dy)+shoulder(labelWell,.34,.47,dx,dy)+shoulder(divider,.39,.49,dx,dy);
+      float fp=max(length(dx),length(dy));
+      float edgeAA=min(.8,.10+.45*fp);
+      float flange=smoothstep(-edgeAA,edgeAA,min(well.z,labelWell.z))*(1.-smoothstep(-1.65,-.66,boundary));
+      float openSeat=(1.-smoothstep(-edgeAA,edgeAA,well.z))*smoothstep(-.32,.26,cardEdge);
+      // The deep inner wall transmits the backdrop, with fewer light paths into the corner air gap.
+      vec3 traced=mix(base,base*.17+.003,openSeat*.78);
+      vec2 rot=vec2(.8,.6);
+      vec2 rotated=vec2(dot(xy,rot),dot(xy,vec2(-rot.y,rot.x)));
+      vec3 fine=toolGrain(rotated+5.7*face,.24,fp);
+      vec3 broad=toolGrain(xy-12.3*face,.51,fp);
+      vec2 grainSlope=.61*vec2(.8*fine.y-.6*fine.z,.6*fine.y+.8*fine.z)+.39*broad.yz;
+      float grain=.63*fine.x+.37*broad.x;
+      vec3 lamp=uLightRotation*normalize(keyAxis());
+      vec2 localLamp=(lamp*uRotation).xy;
+      float toolLight=clamp(.54+.46*dot(grainSlope,localLamp)*face,0.,1.);
+      float pocketShoulder=exp(-.5*pow((well.z-.80)/1.34,2.));
+      float scatter=flange*(.13+.105*grain+.065*(toolLight-.5)+.065*pocketShoulder);
+      vec3 milky=mix(vec3(.44,.445,.455),vec3(.60,.60,.61),toolLight)*(.78+.22*uStrength);
+      traced=mix(traced,milky,scatter);
+      vec3 n=normalize(vec3(-(slope+.15*flange*grainSlope)*face,face));
       if(dot(n,ray)>0.)n=-n;
-      float bend=length(slope), flange=smoothstep(-.56,1.05,min(cw,lw));
-      // A low, smoothly varying diffuser in the sealing flange. The clear
-      // optical window has no synthetic high-frequency grain or engraved lines.
-      float frost=.018*flange;
-      vec3 haze=toLinear(mix(uPale,vec3(.918,.924,.941),.77));
-      vec3 traced=mix(base,haze,frost);
-      float bounce=bend/(.47+bend);
-      float lobe=.22+.51*(1.-smoothstep(.64,.95,abs(dot(ray,n))));
-      vec3 refl=room(uRotation*reflect(ray,n),.074);
-      refl/=1.+.27*refl;
-      traced=mix(traced,refl,lobe*bounce);
-      // Internal die shoulders refract a narrow edge of the graded light bank.
-      // Its width follows the molded radius rather than a fixed screen-space line.
-      vec2 lamp=uLight<.5?vec2(-.58,.82):(uLight<1.5?vec2(-.88,.48):vec2(-.40,.92));
-      lamp=(uLightRotation*vec3(lamp,.95)).xy;
+      float bend=length(slope),bounce=bend/(.62+bend);
+      vec3 reflected=room(uRotation*reflect(ray,n),.145);
+      reflected/=1.+.46*reflected;
+      float fres=.13+.30*(1.-smoothstep(.45,.98,abs(dot(ray,n))));
+      traced=mix(traced,reflected,fres*bounce);
+      // Broad lamp and opposite dark flag reveal the molded steps without chrome-like stripes.
       vec2 offset=(uRotation*vec3(-slope*face,0.)).xy;
-      float focus=dot(offset,lamp);
-      // Each curved land images a strip bank on one side and its adjacent
-      // dark flag on the other. A broad angular transition avoids glint chatter.
-      float footprint=min(.13,.055*(length(dx)+length(dy)));
-      float bankMix=smoothstep(-.18*uLightSize-footprint,.20*uLightSize+footprint,focus+.24*(uLightSize-1.));
-      vec3 toolLight=mix(vec3(.010,.020,.024),vec3(1.,1.07,1.09),bankMix);
-      float exposure=.68*smoothstep(.035,.84,bend)*(.68+.32*clamp01(uStrength));
-      traced=mix(traced,toolLight,exposure);
-      traced=traced*(1.-.052*bounce)+(.037*max(focus,0.))*bounce;
+      float focus=dot(offset,(uLightRotation*vec3(-.58,.82,.95)).xy);
+      float bankMix=smoothstep(-.36*uLightSize-.12*fp,.40*uLightSize+.12*fp,focus+.15*(uLightSize-1.));
+      vec3 bankTone=mix(vec3(.015,.018,.021),vec3(.64,.66,.67),bankMix);
+      traced=mix(traced,bankTone,.36*smoothstep(.04,1.05,bend)*(.66+.34*clamp01(uStrength)));
+      traced*=1.-.12*(1.-smoothstep(-.2,.80,divider.z))*flange;
+      traced*=1.-.29*bridge.z*flange;
       return mix(base,traced,weight);
     }
-    vec4 printAt(vec3 hit,vec3 inner,float exitT,vec3 incident,vec2 dx,vec2 dy){
+    // One molded set in the rear tray. The same cross-section is visible through both windows.
+    vec4 retainerAt(vec2 xy,vec3 ray,vec2 dx,vec2 dy){
+      vec2 cp=xy-cardCenter;
+      vec2 h=vec2(cp.x,abs(cp.y)-uCardShape.y-${pocket.endOffset});
+      vec2 v=vec2(abs(cp.x)-uCardShape.x-${pocket.sideOffset},cp.y);
+      h.x-=clamp(h.x,-uCardRails.x+${pocket.endHalfWidth},uCardRails.x-${pocket.endHalfWidth});
+      v.y-=clamp(v.y,-uCardRails.y+${pocket.sideHalfWidth},uCardRails.y-${pocket.sideHalfWidth});
+      h.y*=sign(cp.y);v.x*=sign(cp.x);
+      float hd=length(h)-${pocket.endHalfWidth},vd=length(v)-${pocket.sideHalfWidth};
+      bool horizontal=hd<vd;
+      vec2 fromSpine=horizontal?h:v;
+      float radius=horizontal?${pocket.endHalfWidth}:${pocket.sideHalfWidth},dist=min(hd,vd);
+      float footprint=max(length(dx),length(dy));
+      if(dist>.62+.6*footprint)return vec4(0.);
+      vec2 outwards=safeNorm(fromSpine);
+      float aa=.48*max(.005,widthOnNormal(outwards,dx,dy));
+      float cover=1.-smoothstep(-aa,aa,dist);
+      float height=horizontal?${pocket.endHeight}:${pocket.sideHeight};
+      vec2 radial=fromSpine/radius;
+      float crown=sqrt(max(.026,1.-dot(radial,radial)));
+      vec3 n=normalize(vec3(radial*(height/radius),-sign(ray.z)*crown));
+      if(dot(n,ray)>0.)n=-n;
+      float rim=smoothstep(.28,1.,length(radial));
+      vec3 worldNormal=uRotation*n, key=uLightRotation*normalize(keyAxis());
+      float keySide=.5+.5*dot(worldNormal,key);
+      vec3 reflected=room(uRotation*reflect(ray,n),.092);reflected/=1.+.40*reflected;
+      reflected=mix(reflected,vec3(.77,.79,.80),rim*(.18+.38*keySide));
+      float coating=cover*(.035+.60*fresnel(abs(dot(ray,n)))+(.12+.22*keySide)*rim);
+      float contact=exp(-pow((dist-.04)/(.22+aa),2.));
+      float shadow=(.27*contact+.095*cover)*(1.-.32*keySide);
+      return vec4(reflected*coating,coating+(1.-coating)*shadow);
+    }
+    vec4 printAt(vec3 hit,vec3 inner,float exitT,vec3 incident,vec2 dx,vec2 dy,out vec4 retainer){
+      retainer=vec4(0.);
       float side=inner.z<0.?1.:-1.;
       vec3 p=hit,ray=inner;
       float remaining=exitT;
@@ -268,6 +332,8 @@
       }
       float t=(side*.2-p.z)/(sign(ray.z+.0000001)*max(abs(ray.z),.00001));
       vec2 xy=p.xy+ray.xy*t;
+      float railT=(-.08-p.z)/(sign(ray.z+.0000001)*max(abs(ray.z),.00001));
+      if(railT>0. && railT<remaining)retainer=retainerAt(p.xy+ray.xy*railT,ray,dx,dy);
       vec3 dc=rounded(xy-cardCenter,uCardShape.xy,uCardShape.z),dl=rounded(xy-labelCenter,labelSize,.42);
       bool isCard=dc.z<dl.z;
       vec3 edge=isCard?dc:dl;
@@ -301,6 +367,13 @@
           float glint=pow(.5+.5*cos(phase),3./sqrt(uLightSize));
           float gain=foil*bareMetal*glint*(.018+.24*fleck)*uStrength;
           pigment+=vec3(min(gain,1.-max(pigment.r,max(pigment.g,pigment.b))));
+          // The thin diffractive coating sits above both silver and ink. It appears
+          // when tilted, leaving the neutral flecks and printed colors legible head on.
+          float tilt=smoothstep(.15,.58,length(ray.xy));
+          float band=.5+.5*cos(15.*(uv.x-mid.x)-9.*(uv.y-mid.y)+6.7*ray.x+3.1*ray.y-dot(travel.xy,vec2(2.8,1.7)));
+          vec3 hue=.5+.5*cos(vec3(0.,2.094,4.189)+8.*ray.x-5.5*ray.y+11.*(uv.x-mid.x)+5.*(uv.y-mid.y));
+          float coat=foil*tilt*(.04+.11*band*band)*(.48+.52*glint)*uStrength;
+          pigment+=coat*mix(vec3(.16),hue,.82)*(1.-pigment);
         }
       }
       float a=(cover+paperSide)*valid;
@@ -308,6 +381,12 @@
     }
     void main(){
       vec3 p=vPoint,n=normalize(vNormal),camera=vec3(0.,0.,520.)*uRotation;
+      float border=rounded(p.xy,shell,3.7).z;
+      if(border>-.88 && abs(p.z)>2.26 && abs(n.z)>.001 && abs(n.z)<.999){
+        vec2 shoulderN=safeNorm(vec2(max(0.,border+.88),abs(p.z)-2.26));
+        vec3 curved=vec3(safeNorm(n.xy)*shoulderN.x,sign(p.z)*shoulderN.y);
+        n=normalize(mix(n,curved,.72));
+      }
       vec3 incident=normalize(p-camera),inner=refract(incident,n,1./eta);
       vec3 origin=p+inner*.025,en;
       float exitT=farWall(origin,inner,en);
@@ -320,15 +399,18 @@
       vec2 dx=derivativeAtPlane(incident,vec3(1.,0.,0.),perspective);
       vec2 dy=derivativeAtPlane(incident,vec3(0.,1.,0.),perspective);
       float side=inner.z<0.?1.:-1.;
-      vec4 paper=printAt(origin,inner,exitT,incident,dx,dy);
+      vec4 retainer;
+      vec4 paper=printAt(origin,inner,exitT,incident,dx,dy,retainer);
       col=mold(col,origin,inner,exitT,-side,dx,dy,.31*(1.-paper.a));
       col=paper.rgb+(1.-paper.a)*col;
       col=mold(col,origin,inner,exitT,side,dx,dy,1.);
+      col=retainer.rgb+(1.-retainer.a)*col;
       // Long paths through the edge acquire a faint aqua tint. Ink sits just under the face.
       float opticalPath=mix(min(exitT,50.),1.6/max(.45,abs(inner.z)),paper.a);
-      col*=exp(-opticalPath*vec3(.0055,.0011,.00185));
+      col*=exp(-opticalPath*vec3(.0026,.0019,.00165));
       float front=fresnel(abs(dot(n,-incident)));
-      vec3 spec=room(uRotation*reflect(incident,n),.026);
+      vec3 spec=room(uRotation*reflect(incident,n),.083);
+      spec/=1.+.12*spec;
       col=mix(col,spec,front);
       vec3 rgb=clamp(toDisplay(col),0.,1.);
       if(uClear>.5){
@@ -849,9 +931,9 @@
       };
       const [nx,ny,nz] = rotatePoint(0, 0, 1, this.pose);
       const face = nz >= 0 ? 1 : -1;
-      const trace = (cx, cy, w, h, radius, z) => {
+      const trace = (cx, cy, w, h, radius, z, append=false) => {
         const points = outline(w / 2, h / 2, radius);
-        ctx.beginPath();
+        if (!append) ctx.beginPath();
         points.forEach((p, i) => {
           const q = project(p.x + cx, p.y + cy, z);
           if (i) ctx.lineTo(...q); else ctx.moveTo(...q);
@@ -869,7 +951,7 @@
       const lampY=rotation[1]*baseX+rotation[4]*baseY+rotation[7]*.95;
       // Span each bevel with projected faces. Opposite slopes reflect the strip
       // and the dark flag independently as their apparent widths change with orbit.
-      const ledge = (cx,cy,w,h,r,run,rise,flat=false) => {
+      const ledge = (cx,cy,w,h,r,run,rise) => {
         const outer=outline(w/2+run,h/2+run,r+run,6);
         const inner=outline(w/2-run,h/2-run,Math.max(.01,r-run),6);
         const from=outer.map(p=>project(cx+p.x,cy+p.y,1.35*face));
@@ -879,14 +961,10 @@
           const n=rotatePoint((outer[i].nx+outer[j].nx)*.5,(outer[i].ny+outer[j].ny)*.5,0,this.pose);
           const focus=(n[0]*lampX+n[1]*lampY)*Math.sign(rise);
           const exposure=Math.max(0,Math.min(1,.5+(focus+.24*(rig.size-1))/rig.size));
-          const v=Math.round(32+215*exposure);
-          ctx.fillStyle='rgba('+v+','+Math.min(255,v+9)+','+Math.min(255,v+10)+','+
-            Math.min(.9,.48+.2*this.strength)+')';
+          const v=Math.round(44+174*exposure);
+          ctx.fillStyle='rgba('+v+','+(v+2)+','+(v+3)+','+
+            Math.min(.68,.32+.18*this.strength)+')';
           ctx.beginPath();ctx.moveTo(...from[i]);ctx.lineTo(...from[j]);ctx.lineTo(...to[j]);ctx.lineTo(...to[i]);ctx.closePath();ctx.fill();
-        }
-        if(flat){
-          trace(cx,cy,w-2*run,h-2*run,Math.max(.01,r-run),(1.35+rise)*face);
-          ctx.fillStyle='rgba(173,202,199,.12)';ctx.fill();
         }
       };
       const screenAngle=.55*rig.dx-.34*rig.dy,c=Math.cos(screenAngle),s=Math.sin(screenAngle);
@@ -897,42 +975,103 @@
       const strip=bankGradient(.5,.5,.26,.21);
       const margin=.16*rig.size;
       const sweep=Math.max(margin,Math.min(1-margin,.5+.24*nx*face-.16*ny*face+.24*rig.dx-.16*rig.dy));
-      strip.addColorStop(0,'rgba(232,252,255,.9)');
-      strip.addColorStop(sweep-.14*rig.size,'rgba(38,62,68,.72)');
-      strip.addColorStop(sweep-.04*rig.size,'rgba(33,49,58,.88)');
-      strip.addColorStop(sweep,'rgba(250,255,255,.98)');
-      strip.addColorStop(sweep+.095*rig.size,'rgba(217,239,244,.8)');
-      strip.addColorStop(1,'rgba(51,76,80,.68)');
-      ring(0,0,size.w,size.h,3.7,-3.12*face,'rgba(38,70,68,.7)',.66,'rgba(181,215,208,.14)');
-      ring(0,0,size.w-.32,size.h-.32,3.54,-1.75*face,'rgba(46,76,77,.50)',.38);
+      strip.addColorStop(0,'rgba(229,231,229,.54)');
+      strip.addColorStop(sweep-.14*rig.size,'rgba(50,52,54,.47)');
+      strip.addColorStop(sweep-.04*rig.size,'rgba(42,43,46,.56)');
+      strip.addColorStop(sweep,'rgba(248,248,243,.68)');
+      strip.addColorStop(sweep+.095*rig.size,'rgba(221,223,224,.52)');
+      strip.addColorStop(1,'rgba(61,64,67,.46)');
+      ring(0,0,size.w,size.h,3.7,-3.12*face,'rgba(52,54,55,.56)',.58,'rgba(177,178,179,.14)');
+      ring(0,0,size.w-.32,size.h-.32,3.54,-1.75*face,'rgba(57,59,62,.35)',.38);
+
+      const fitted=this.cardShape, wellW=fitted.w+2*pocket.sideGap, wellH=fitted.h+2*pocket.endGap;
+      ctx.save();
+      trace(0,0,size.w,size.h,3.7,1.38*face);
+      trace(fitted.x,fitted.y,wellW,wellH,pocket.radius,1.38*face,true);
+      trace(label.x,label.y,label.w+.85,label.h+.85,.74,1.38*face,true);
+      ctx.clip('evenodd');
+      const grainOrigin=project(0,0,1.38*face), gx=project(1,0,1.38*face), gy=project(0,1,1.38*face);
+      ctx.transform(gx[0]-grainOrigin[0],gx[1]-grainOrigin[1],gy[0]-grainOrigin[0],gy[1]-grainOrigin[1],...grainOrigin);
+      const tile=softwareResin();
+      ctx.scale(1/tile.density,1/tile.density);
+      ctx.fillStyle=ctx.createPattern(tile.canvas,'repeat');
+      ctx.fillRect(-size.w*tile.density,-size.h*tile.density,2*size.w*tile.density,2*size.h*tile.density);
+      ctx.restore();
+
       ring(0,0,size.w,size.h,3.7,2.26*face,strip,.56);
       ring(0,0,size.w-1.76,size.h-1.76,2.82,3.14*face,strip,.64);
       ring(0,0,size.w-3.1,size.h-3.1,2.5,3.36*face,strip,.48);
       ledge(0,0,size.w-5.22,size.h-5.22,2.28,.18,.32);
       ledge(0,0,size.w-6.58,size.h-6.58,1.60,.18,-.32);
-      ledge(0,-14.95,73.04,98.5,1.64,.30,.43);
-      ledge(0,37.63,73.34,1.88,.18,.22,.51,true);
-      const fitted = this.cardShape;
-      for(const direction of [-1,1]){
-        ledge(0,fitted.y+direction*(fitted.h/2+1.79),2*fitted.horizontalRail,.86,.13,.15,.36,true);
-        ledge(direction*(fitted.w/2+1.53),fitted.y,.82,2*fitted.verticalRail,.13,.15,.33,true);
+      const bridgeTop=pocket.dividerY-.55, bridgeBottom=fitted.y+wellH/2+.08;
+      const projectBridge=(x,y)=>project(x,y,1.38*face);
+      const bridgeFill=ctx.createLinearGradient(...projectBridge(0,bridgeTop),...projectBridge(0,bridgeBottom));
+      for(let i=0;i<=16;i++){
+        const t=i/16, surface=dividerDraftSurface(0,bridgeTop+t*(bridgeBottom-bridgeTop),fitted);
+        const response=-surface.dy*lampY*face*.42+surface.height*.13;
+        const tone=response>0?'245,244,241':'18,19,20';
+        bridgeFill.addColorStop(t,'rgba('+tone+','+Math.min(.25,Math.abs(response)*this.strength)+')');
       }
+      ctx.beginPath();
+      ctx.moveTo(...projectBridge(-36.25,bridgeTop));ctx.lineTo(...projectBridge(36.25,bridgeTop));
+      ctx.quadraticCurveTo(...projectBridge(36.25,bridgeTop-1.5),...projectBridge(wellW/2,bridgeBottom));
+      ctx.lineTo(...projectBridge(-wellW/2,bridgeBottom));
+      ctx.quadraticCurveTo(...projectBridge(-36.25,bridgeTop-1.5),...projectBridge(-36.25,bridgeTop));
+      ctx.closePath();ctx.fillStyle=bridgeFill;ctx.fill();
+      ledge(0,pocket.dividerY,2*pocket.dividerHalfWidth,2*pocket.dividerHalfHeight,pocket.dividerRadius,.34,.38);
+      trace(fitted.x,fitted.y,wellW,wellH,pocket.radius,.42*face);
+      ctx.fillStyle='rgba(27,25,25,.50)';ctx.fill();
+      ledge(fitted.x,fitted.y,wellW,wellH,pocket.radius,.25,.56);
       for (const [r,key] of [[card,face > 0 ? 'front':'back'],[label,face > 0 ? 'label':'labelBack']]) {
         const src = this.sources[key];
         const cut = r === card ? fitted : r;
-        if(r===card){
-          ledge(cut.x,cut.y,cut.w+2.1,cut.h+2.1,Math.max(0,cut.r-.1),.27,.64);
-          ledge(cut.x,cut.y,cut.w+.64,cut.h+.64,Math.max(0,cut.r-.83),.13,-.17);
-        }else ledge(cut.x,cut.y,cut.w+2.02,cut.h+2.02,1.24,.26,.54);
+        if(r===label) ledge(cut.x,cut.y,cut.w+2.02,cut.h+2.02,1.24,.26,.54);
         ctx.save(); trace(cut.x, cut.y, cut.w, cut.h, cut.r, .2*face); ctx.clip();
         if (src) {
           drawProjectedImage(ctx, src, (u, v) => project(r.x + (u-.5)*r.w*face,r.y+(.5-v)*r.h,.2*face));
         } else {ctx.fillStyle='#efeeee';ctx.fillRect(0,0,width,height);}
         ctx.restore();
       }
+      const rail = (x,y,halfLength,radius,horizontal) => {
+        const w=2*(horizontal?halfLength:radius), h=2*(horizontal?radius:halfLength);
+        const trayZ=-.24, z=trayZ+(face>0?(horizontal?pocket.endHeight:pocket.sideHeight):0);
+        trace(x,y,w,h,radius,trayZ);
+        ctx.strokeStyle='rgba(22,21,21,.45)';ctx.lineWidth=.37*scale;ctx.stroke();
+        trace(x,y,w,h,radius,z);
+        const polarity=(horizontal?lampY:lampX)*face < 0 ? -1 : 1;
+        const dx=horizontal?0:radius*polarity,dy=horizontal?radius*polarity:0;
+        const clearRib=ctx.createLinearGradient(...project(x-dx,y-dy,z),...project(x+dx,y+dy,z));
+        clearRib.addColorStop(0,'rgba(26,27,28,.56)');
+        clearRib.addColorStop(.30,'rgba(73,72,71,.20)');
+        clearRib.addColorStop(.57,'rgba(138,139,138,.09)');
+        clearRib.addColorStop(.80,'rgba(198,199,197,.26)');
+        clearRib.addColorStop(.94,'rgba(242,242,235,.62)');
+        clearRib.addColorStop(1,'rgba(177,178,177,.26)');
+        ctx.fillStyle=clearRib;ctx.fill();
+        ctx.lineWidth=.10*scale;ctx.strokeStyle='rgba(211,211,207,.43)';ctx.stroke();
+      };
+      for(const dir of [-1,1]){
+        rail(fitted.x,fitted.y+dir*(fitted.h/2+pocket.endOffset),fitted.horizontalRail,pocket.endHalfWidth,true);
+        rail(fitted.x+dir*(fitted.w/2+pocket.sideOffset),fitted.y,fitted.verticalRail,pocket.sideHalfWidth,false);
+      }
+
+      // The clear diffraction film covers both the silver field and its printed mark.
+      const tilt=face*(nx*.84+ny*.46), phase=tilt+rig.dx*.53-rig.dy*.26;
+      const film=foilBoundary(face).map(([u,v])=>project(label.x+(u/1536-.5)*label.w*face,label.y+(.5-v/448)*label.h,.224*face));
+      const xs=film.map(pt=>pt[0]),ys=film.map(pt=>pt[1]);
+      const rainbow=ctx.createLinearGradient(Math.min(...xs),Math.min(...ys),Math.max(...xs),Math.max(...ys));
+      for(let i=0;i<=6;i++){
+        const hue=(198+phase*325+i*30)%360;
+        rainbow.addColorStop(i/6,'hsl('+hue+' 72% 64%)');
+      }
+      ctx.save();ctx.beginPath();
+      film.forEach(([x,y],i)=>i?ctx.lineTo(x,y):ctx.moveTo(x,y));ctx.closePath();
+      ctx.globalCompositeOperation='screen';
+      ctx.globalAlpha=Math.min(.36,(.028+.34*Math.min(1,Math.abs(phase)*2))*this.strength);
+      ctx.fillStyle=rainbow;ctx.fill();ctx.restore();
       trace(0,0,size.w,size.h,3.7,3.14*face);
       const highlight=bankGradient(.51,.26,.30,.26);
-      const gloss = ([.07,.095,.055][lightIds[this.light]] + (1-Math.abs(nz))*.21)*this.strength;
+      const gloss = ([.045,.065,.04][lightIds[this.light]] + (1-Math.abs(nz))*.16)*this.strength;
       const spread=[.09,.046,.16][lightIds[this.light]]*rig.size;
       highlight.addColorStop(0,'rgba(255,255,255,0)');
       highlight.addColorStop(sweep-spread,'rgba(250,255,255,0)');
@@ -942,6 +1081,27 @@
       highlight.addColorStop(1,'rgba(255,255,255,0)');
       ctx.fillStyle=highlight;ctx.fill();
     }
+  }
+
+  let resinTile;
+  function softwareResin() {
+    if (resinTile) return resinTile;
+    const grain=embossedMoldGrain();
+    const canvas=newCanvas(grain.size,grain.size), ctx=canvas.getContext('2d');
+    const pixels=ctx.createImageData(grain.size,grain.size);
+    for(let i=0;i<grain.heights.length;i++){
+      const tone=grain.heights[i];
+      const value=Math.max(0,Math.min(255,117+(tone-.5)*292));
+      pixels.data.set([value+1,value,value,80+76*Math.abs(tone-.5)],4*i);
+    }
+    ctx.putImageData(pixels,0,0);
+    resinTile={canvas,density:grain.size/6.4};
+    return resinTile;
+  }
+
+  function foilBoundary(face) {
+    return face>0 ? [[670,316],[670,448],[874,448],[874,316]] :
+      [[614,0],[614,210],[768,261],[922,210],[922,0]];
   }
 
   function drawProjectedImage(ctx, image, project) {
@@ -979,6 +1139,41 @@
     return points;
   }
 
+  function dividerDraftSurface(x,y,fitted) {
+    const top=pocket.dividerY-.55,bottom=fitted.y+fitted.h/2+pocket.endGap+.08;
+    if(y<=bottom || y>=top)return {height:0,dx:0,dy:0};
+    const span=top-bottom,t=(top-y)/span,c=t*(1-t),bias=1.18-.36*t;
+    const bell=16*c*c*bias,bellSlope=32*c*(1-2*t)*bias-5.76*c*c;
+    const taper=fitted.w/2+pocket.sideGap-36.25;
+    const shoulder=36.25+taper*t;
+    const u=Math.max(0,Math.min(1,(shoulder+.75-Math.abs(x))/1.5));
+    const fade=u*u*(3-2*u),fadeSlope=4*u*(1-u),lift=-.58;
+    return {height:lift*bell*fade,dx:-lift*bell*fadeSlope*Math.sign(x),
+      dy:-lift*(bellSlope*fade+bell*fadeSlope*taper)/span};
+  }
+
+  // A periodic die texture in material space, spanning 6.4 mm of molded plastic.
+  // Neighboring cells share the same height and tangent at the tile boundary.
+  let moldGrain;
+  function embossedMoldGrain() {
+    if(moldGrain)return moldGrain;
+    const size=128, heights=new Float32Array(size*size);
+    function noise(x,y,cells) {
+      function corner(i,j) {
+        const seed=Math.imul(i%cells+1,0x1f123bb5)^Math.imul(j%cells+1,0x5f356495);
+        const hash=Math.imul(seed^(seed>>>16),0x45d9f3b);
+        return ((hash^(hash>>>16))>>>0)/4294967295;
+      }
+      const a=x*cells/size,b=y*cells/size,i=Math.floor(a),j=Math.floor(b);
+      const u=a-i,v=b-j,s=u*u*(3-2*u),t=v*v*(3-2*v);
+      return (1-t)*((1-s)*corner(i,j)+s*corner(i+1,j))+t*((1-s)*corner(i,j+1)+s*corner(i+1,j+1));
+    }
+    for(let y=0;y<size;y++)for(let x=0;x<size;x++){
+      heights[y*size+x]=.60*noise(x,y,19)+.31*noise(x,y,39)+.09*noise(x,y,62);
+    }
+    return moldGrain={size,heights};
+  }
+
   // Build a single closed optical solid for each molded half. The recesses and
   // retaining lands belong to its inner surface, so light crosses one boundary
   // there, even where a rail runs into a corner.
@@ -988,21 +1183,29 @@
     const innerInset = 2.02, w = halfWidth-innerInset, h = halfHeight-innerInset;
     const g = {
       p: shell.positions.map(mm => mm * .001), n: shell.normals,
-      i: shell.indices, toolIndices: [], uv: []
+      i: shell.indices, toolIndices: [], rails: [], uv: []
     };
     const features = [];
     function feature(x, y, hw, hh, radius, width, lift, bead = false) {
       features.push({x,y,hw,hh,radius:Math.min(radius,hw,hh),width,lift,bead});
     }
     feature(0,0,halfWidth-2.95,halfHeight-2.95,1.94,.18,-.32,true);
-    feature(0,-14.95,36.52,49.25,1.64,.30,.20);
-    feature(fitted.x,fitted.y,fitted.w/2+1.05,fitted.h/2+1.05,Math.max(0,fitted.r-.1),.27,.64);
-    feature(fitted.x,fitted.y,fitted.w/2+.32,fitted.h/2+.32,Math.max(0,fitted.r-.83),.13,-.17);
+    feature(0,-14.95,36.52,49.25,1.64,.30,side<0?-.72:.20);
+    const wellWidth=fitted.w/2+pocket.sideGap, wellHeight=fitted.h/2+pocket.endGap;
+    feature(fitted.x,fitted.y,wellWidth,wellHeight,pocket.radius,.22,side<0?.16:.40);
     feature(label.x,label.y,label.w/2+1.01,label.h/2+1.01,1.24,.26,.68);
-    feature(0,37.63,36.67,.94,.18,.22,-.51);
-    for (const direction of [-1,1]) {
-      feature(0,fitted.y+direction*(fitted.h/2+1.79),fitted.horizontalRail,.43,.13,.15,-.36);
-      feature(direction*(fitted.w/2+1.53),fitted.y,.41,fitted.verticalRail,.13,.15,-.33);
+    feature(0,pocket.dividerY,pocket.dividerHalfWidth,pocket.dividerHalfHeight,pocket.dividerRadius,.23,-.25);
+    const draftTop=pocket.dividerY-.55,draftBottom=fitted.y+wellHeight+.08;
+    const draftSpan=draftTop-draftBottom;
+    // Only the rear die carries the four retainers. Their continuous curved
+    // crowns rise from the pocket floor at -0.24 mm toward the paper edge.
+    if(side<0)for(const sign of [-1,1]){
+      g.rails.push({name:sign<0?'Bottom card retainer':'Top card retainer',x:fitted.x,
+        y:fitted.y+sign*(fitted.h/2+pocket.endOffset),hw:fitted.horizontalRail,hh:pocket.endHalfWidth,
+        radius:pocket.endHalfWidth,height:pocket.endHeight,indices:[]});
+      g.rails.push({name:sign<0?'Left card retainer':'Right card retainer',
+        x:fitted.x+sign*(fitted.w/2+pocket.sideOffset),y:fitted.y,hw:pocket.sideHalfWidth,hh:fitted.verticalRail,
+        radius:pocket.sideHalfWidth,height:pocket.sideHeight,indices:[]});
     }
     // Integral of smoothstep across the small tangent finish at either end of a bevel.
     function easedRamp(x,ease) {
@@ -1031,6 +1234,22 @@
         const ny=arc>0 ? ay/arc : Number(qy>=qx);
         sx+=gradient*nx*Math.sign(px);
         sy+=gradient*ny*Math.sign(py);
+      }
+      for(const rail of g.rails){
+        const px=x-rail.x,py=y-rail.y,r=rail.radius;
+        const dx=px-Math.max(-rail.hw+r,Math.min(rail.hw-r,px));
+        const dy=py-Math.max(-rail.hh+r,Math.min(rail.hh-r,py));
+        const crown=1-(dx*dx+dy*dy)/(r*r);
+        if(crown<=0)continue;
+        height-=rail.height*crown*crown;
+        sx+=4*rail.height*crown*dx/(r*r);
+        sy+=4*rail.height*crown*dy/(r*r);
+      }
+      if(y>draftBottom && y<draftTop){
+        // Both interfaces follow the same drafted depression, preserving clearance
+        // across the bridge even with small cards. Its tangent merges into the flat lands.
+        const draft=dividerDraftSurface(x,y,fitted);
+        height+=side*draft.height;sx+=side*draft.dx;sy+=side*draft.dy;
       }
       // Die out into the flat shoulder where the stepped wall joins the floor.
       const corner=3.7-innerInset;
@@ -1061,6 +1280,20 @@
           }
         }
       }
+      for(const rail of g.rails){
+        const centerValue=rail[center],half=rail[extent],r=rail.radius;
+        // Sample the domed cross-section and the hemispherical ends directly.
+        for(const sign of [-1,1]) {
+          const cap=centerValue+sign*(half-r);
+          intervals.push([cap-r,cap+r]);
+          for(let i=-4;i<=4;i++)cuts.push(cap+i*r/4);
+        }
+      }
+      if(center==='y'){
+        for(let i=0;i<=16;i++)cuts.push(draftBottom+draftSpan*i/16);
+      }else{
+        for(const sign of [-1,1])intervals.push([Math.min(sign*wellWidth,sign*36.25)-.75,Math.max(sign*wellWidth,sign*36.25)+.75]);
+      }
       intervals.push([-limit,-limit+1.8],[limit-1.8,limit]);
       for (const range of intervals) for(const v of range) if(v>-limit && v<limit)cuts.push(v);
       cuts.sort((a,b)=>a-b);
@@ -1085,6 +1318,17 @@
       return g.p.length/3-1;
     }
     const rad=3.7-innerInset;
+    function distance(x,y,hw,hh,r) {
+      const a=Math.abs(x)-hw+r,b=Math.abs(y)-hh+r;
+      return Math.hypot(Math.max(0,a),Math.max(0,b))+Math.min(Math.max(a,b),0)-r;
+    }
+    function dieIndices(x,y) {
+      const rail=g.rails.find(r=>distance(x-r.x,y-r.y,r.hw,r.hh,r.radius)<0);
+      if(rail)return rail.indices;
+      const cardWindow=distance(x-fitted.x,y-fitted.y,wellWidth,wellHeight,pocket.radius);
+      const labelWindow=distance(x-label.x,y-label.y,label.w/2+.65,label.h/2+.65,1);
+      return Math.min(cardWindow,labelWindow)<0?g.i:g.toolIndices;
+    }
     for(let j=0;j<ys.length;j++) for(let i=0;i<xs.length;i++) {
       let x=xs[i], y=ys[j];
       const u=(Math.abs(x)-w+rad)/rad, v=(Math.abs(y)-h+rad)/rad;
@@ -1097,7 +1341,7 @@
       if(i===0 || j===0 || i===xs.length-1 || j===ys.length-1) perimeter.push(id);
       if(i && j) {
         const left=id-1, below=id-xs.length, lowLeft=below-1;
-        const indices=p.height<1.455 ? g.toolIndices : g.i;
+        const indices=dieIndices((xs[i]+xs[i-1])/2,(ys[j]+ys[j-1])/2);
         if(side<0)indices.push(lowLeft,below,id,lowLeft,id,left);
         else indices.push(lowLeft,id,below,lowLeft,left,id);
       }
@@ -1145,15 +1389,17 @@
       previous=ids;
     }
     zipper(previous,perimeter);
+    for(let i=0;i<g.p.length;i+=3)g.uv.push(g.p[i]/.0064,-g.p[i+1]/.0064);
     return g;
   }
 
   async function buildGLB(sources, cardShape) {
     const doc = {
-      asset: { version:'2.0', generator:'Slab Studio 3' }, scene:0, scenes:[{name:'Graded card holder',nodes:[]}],
+      asset: { version:'2.0', generator:'Slab Studio 4' }, scene:0, scenes:[{name:'Graded card holder',nodes:[]}],
       nodes:[], meshes:[], materials:[], accessors:[], bufferViews:[], buffers:[],
-      images:[], textures:[], samplers:[{magFilter:9729,minFilter:9987,wrapS:33071,wrapT:33071}],
-      extensionsUsed:['KHR_materials_transmission','KHR_materials_ior','KHR_materials_volume']
+      images:[], textures:[], samplers:[{magFilter:9729,minFilter:9987,wrapS:33071,wrapT:33071},
+        {magFilter:9729,minFilter:9987,wrapS:10497,wrapT:10497}],
+      extensionsUsed:['KHR_materials_transmission','KHR_materials_ior','KHR_materials_volume','KHR_materials_iridescence','KHR_materials_specular']
     };
     const chunks=[];
     let offset=0;
@@ -1183,25 +1429,63 @@
       if(g.uv.length)attributes.TEXCOORD_0=accessor(g.uv,'VEC2',2);
       return {attributes,indices:accessor(g.i,'SCALAR',1),material};
     }
-    function mesh(name,g,material) {
-      const surface=primitive(g,material);
-      const item={name,primitives:[surface]};
-      if(g.toolIndices?.length) {
-        item.primitives.push({attributes:surface.attributes,indices:accessor(g.toolIndices,'SCALAR',1),material:molded});
-      }
+    function addMesh(name,primitives) {
+      const item={name,primitives};
       const index=doc.meshes.push(item)-1;
       doc.scenes[0].nodes.push(doc.nodes.push({name,mesh:index})-1);
       return item;
     }
-    function optical(name,roughness,thickness) {
+    function mesh(name,g,material) {
+      const surface=primitive(g,material);
+      const item=addMesh(name,[surface]);
+      if(g.toolIndices?.length) {
+        item.primitives.push({attributes:surface.attributes,indices:accessor(g.toolIndices,'SCALAR',1),material:molded});
+      }
+      for(const rail of g.rails||[]){
+        // These patches meet the die along identical boundary vertices. Give
+        // each retainer its own tight bounds for inspection in native 3D tools.
+        const patch={p:[],n:[],uv:[],i:[]}, ids=new Map();
+        for(const vertex of rail.indices){
+          if(!ids.has(vertex)){
+            ids.set(vertex,patch.p.length/3);
+            const j=vertex*3;
+            patch.p.push(g.p[j],g.p[j+1],g.p[j+2]);
+            patch.n.push(g.n[j],g.n[j+1],g.n[j+2]);
+          }
+          patch.i.push(ids.get(vertex));
+        }
+        addMesh(rail.name,[primitive(patch,retainer)]);
+      }
+      return item;
+    }
+    function optical(name,roughness,thickness,transmission=1) {
       return doc.materials.push({name,pbrMetallicRoughness:{baseColorFactor:[1,1,1,1],metallicFactor:0,
         roughnessFactor:roughness},extensions:{
-        KHR_materials_transmission:{transmissionFactor:1},KHR_materials_ior:{ior:1.52},
-        KHR_materials_volume:{thicknessFactor:thickness,attenuationDistance:.085,attenuationColor:[.627,.911,.854]}
+        KHR_materials_transmission:{transmissionFactor:transmission},KHR_materials_ior:{ior:1.49},
+        KHR_materials_volume:{thicknessFactor:thickness,attenuationDistance:.32,attenuationColor:[.932,.969,.959]}
       }})-1;
     }
-    const clear=optical('Polished clear glass',.023,.00165);
-    const molded=optical('Polished inner glass',.065,.002);
+    async function texture(canvas,name,sampler=0) {
+      const bytes=new Uint8Array(await (await pngBlob(canvas)).arrayBuffer());
+      const image=doc.images.push({name,mimeType:'image/png',bufferView:store(bytes)})-1;
+      return {index:doc.textures.push({source:image,sampler})-1};
+    }
+    function normalPixel(bytes,offset,x,y) {
+      const inverse=1/Math.hypot(x,y,1);
+      bytes[offset]=127.5+127.5*x*inverse;bytes[offset+1]=127.5+127.5*y*inverse;
+      bytes[offset+2]=127.5+127.5*inverse;bytes[offset+3]=255;
+    }
+    const clear=optical('Clear molded polymer',.055,.00165);
+    const molded=optical('Pebbled molded surround',.24,.002,.91);
+    const retainer=optical('Polished clear retainers',.082,.00058);
+    const grain=embossedMoldGrain(), tile=newCanvas(grain.size,grain.size), tileCtx=tile.getContext('2d');
+    const tilePixels=tileCtx.createImageData(grain.size,grain.size);
+    const at=(x,y)=>grain.heights[((y+grain.size)%grain.size)*grain.size+(x+grain.size)%grain.size];
+    for(let y=0;y<grain.size;y++)for(let x=0;x<grain.size;x++){
+      normalPixel(tilePixels.data,4*(y*grain.size+x),.72*(at(x-1,y)-at(x+1,y)),.72*(at(x,y-1)-at(x,y+1)));
+    }
+    tileCtx.putImageData(tilePixels,0,0);
+    doc.materials[molded].normalTexture=await texture(tile,'Mold grain normals',1);
     const paperEdge=doc.materials.push({name:'Paper stock edge',pbrMetallicRoughness:{
       baseColorFactor:[.81,.786,.738,1],metallicFactor:0,roughnessFactor:.85}})-1;
     const ink={};
@@ -1212,13 +1496,63 @@
         const w=src.naturalWidth||src.width,h=src.naturalHeight||src.height;
         const canvas=newCanvas(w,h),cx=canvas.getContext('2d');
         cx.fillStyle='#f5f5f5';cx.fillRect(0,0,w,h);cx.drawImage(src,0,0);
-        const bytes=new Uint8Array(await (await pngBlob(canvas)).arrayBuffer());
-        const image=doc.images.push({name:key,mimeType:'image/png',bufferView:store(bytes)})-1;
-        pbr.baseColorTexture={index:doc.textures.push({source:image,sampler:0})-1};
+        pbr.baseColorTexture=await texture(canvas,key);
       } else pbr.baseColorFactor=[.92,.92,.92,1];
       ink[key]=doc.materials.push({name:key,pbrMetallicRoughness:pbr})-1;
     }
     const geometry=()=>({p:[],n:[],uv:[],i:[]});
+    async function foilMaterial(name,key,sign,bounds) {
+      const print=doc.materials[ink[key]].pbrMetallicRoughness;
+      const pbr={...print,metallicFactor:.86,roughnessFactor:.25};
+      const film={iridescenceFactor:.42,iridescenceIor:1.38,iridescenceThicknessMinimum:200,iridescenceThicknessMaximum:420};
+      const material={name,pbrMetallicRoughness:pbr,extensions:{KHR_materials_iridescence:film}};
+      if(sources[key]){
+        // Register a compact crop of the printed die to the overlay's own UVs.
+        // The metallic response is strongest on neutral exposed foil and gives
+        // way to a diffuse finish on the colored ink and dark overprint.
+        const {x,y,w,h}=bounds,front=sign>0;
+        const color=newCanvas(w*2,h*2),ctx=color.getContext('2d');
+        const source=sources[key],sx=(source.naturalWidth||source.width)/1536,sy=(source.naturalHeight||source.height)/448;
+        ctx.drawImage(source,x*sx,y*sy,w*sx,h*sy,0,0,color.width,color.height);
+        const pixels=ctx.getImageData(0,0,color.width,color.height);
+        const response=ctx.createImageData(color.width,color.height),normal=ctx.createImageData(color.width,color.height);
+        const sheen=ctx.createImageData(color.width,color.height);
+        for(let py=0;py<color.height;py++)for(let px=0;px<color.width;px++){
+          const j=(py*color.width+px)*4,c=pixels.data;
+          const chroma=(Math.max(c[j],c[j+1],c[j+2])-Math.min(c[j],c[j+1],c[j+2]))/255;
+          const value=(.2126*c[j]+.7152*c[j+1]+.0722*c[j+2])/255;
+          const metal=Math.min(1,Math.max(0,(.23-chroma)/.16))*Math.min(1,Math.max(0,(value-.26)/.23));
+          const fleck=Math.min(1,Math.max(0,(value-.47)/.41));
+          const off=front?0:41;
+          const grainX=px+off,grainY=py+off;
+          const u=grainX%grain.size,v=grainY%grain.size;
+          response.data[j]=Math.round(255*(.54+.42*metal)*(.64+.36*fleck));
+          response.data[j+1]=Math.round(255*(.68*(1-metal)+(.37-.21*fleck)*metal));
+          response.data[j+2]=Math.round(255*metal*(.67+.28*fleck));response.data[j+3]=255;
+          // Microscopically tilted foil facets favour slightly different reflected
+          // colours when the light moves. The overprinted ink remains dielectric.
+          const phase=2*Math.PI*(2.7*at(u,v)+px*.007-py*.004),tilt=Math.cos(phase),twist=Math.sin(phase);
+          const emboss=.24+.44*metal;
+          normalPixel(normal.data,j,emboss*(at(u-1,v)-at(u+1,v))+.12*tilt,emboss*(at(u,v-1)-at(u,v+1))+.08*twist);
+          const reflectance=.12+.60*metal+.05*fleck;
+          for(const [channel,tone] of [[0,.86+.13*tilt],[1,.90+.07*twist],[2,.86-.13*tilt]]){
+            const linear=reflectance*tone;
+            sheen.data[j+channel]=255*(1.055*linear**(1/2.4)-.055);
+          }
+          sheen.data[j+3]=255;
+        }
+        pbr.baseColorTexture=await texture(color,name+' ink');
+        ctx.putImageData(response,0,0);
+        pbr.metallicRoughnessTexture=await texture(color,name+' metal and roughness');
+        pbr.metallicFactor=1;pbr.roughnessFactor=1;
+        film.iridescenceTexture=pbr.metallicRoughnessTexture;
+        film.iridescenceThicknessTexture=pbr.metallicRoughnessTexture;
+        ctx.putImageData(normal,0,0);material.normalTexture=await texture(color,name+' microfacets');
+        ctx.putImageData(sheen,0,0);
+        material.extensions.KHR_materials_specular={specularColorTexture:await texture(color,name+' reflected sheen')};
+      }
+      return doc.materials.push(material)-1;
+    }
     const vertex=(g,x,y,z,nx,ny,nz) => {
       g.p.push(x*.001,y*.001,z*.001);g.n.push(nx,ny,nz);
       return g.p.length/3-1;
@@ -1260,19 +1594,18 @@
         cap(g,cut,item,s);
         const face=mesh(name+(s>0?' front':' back'),g,ink[key]);
         if(item===label) {
-          // The thin metalized label stamp shares the registered ink texture.
-          const points=s>0?[[670,316],[670,448],[874,448],[874,316]]:
-            [[614,0],[614,210],[768,261],[922,210],[922,0]];
+          const points=foilBoundary(s);
+          const xs=points.map(p=>p[0]),ys=points.map(p=>p[1]);
+          const left=Math.min(...xs),top=Math.min(...ys);
+          const bounds={x:left,y:top,w:Math.max(...xs)-left,h:Math.max(...ys)-top};
           const stamp=geometry();
           for(const [px,py] of points){
             const u=px/1536,v=py/448;
             vertex(stamp,x+s*(u-.5)*w,y+(.5-v)*h,s*.224,0,0,s);
-            stamp.uv.push(u,v);
+            stamp.uv.push((px-left)/bounds.w,(py-top)/bounds.h);
           }
           for(let i=1;i<points.length-1;i++)stamp.i.push(0,i,i+1);
-          const print=doc.materials[ink[key]].pbrMetallicRoughness;
-          const foil=doc.materials.push({name:name+(s>0?' front':' back')+' silver foil',pbrMetallicRoughness:{
-            ...print,metallicFactor:.71,roughnessFactor:.29}})-1;
+          const foil=await foilMaterial(name+(s>0?' front':' back')+' silver foil',key,s,bounds);
           face.primitives.push(primitive(stamp,foil));
         }
       }

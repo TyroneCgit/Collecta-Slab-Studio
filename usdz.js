@@ -67,46 +67,85 @@
   function materialText(doc, material) {
     const path = materialPath(material);
     const pbr = material.pbrMetallicRoughness;
-    const texture = pbr.baseColorTexture && doc.textures[pbr.baseColorTexture.index];
+    const textures = [];
+    function imageNode(name, reference, colorSpace, normal = false) {
+      const texture = doc.textures[reference.index];
+      const image = doc.images[texture.source];
+      const wrap = doc.samplers[texture.sampler].wrapS === 10497 ? 'repeat' : 'clamp';
+      const decode = normal ? `float4 inputs:scale = (2,2,2,1)
+            float4 inputs:bias = (-1,-1,-1,0)` : '';
+      textures.push(`def Shader "${name}" {
+            uniform token info:id = "UsdUVTexture"
+            asset inputs:file = @${texturePath(image)}@
+            token inputs:sourceColorSpace = "${colorSpace}"
+            token inputs:wrapS = "${wrap}"
+            token inputs:wrapT = "${wrap}"
+            float2 inputs:st.connect = <${path}/UV.outputs:result>
+            ${decode}
+            float3 outputs:rgb
+            float outputs:g
+            float outputs:b
+        }`);
+      return path + '/' + name;
+    }
     const isClear = !!material.extensions?.KHR_materials_transmission;
     const tint = material.extensions?.KHR_materials_volume?.attenuationColor;
     const color = isClear && tint ? tint.map(channel => Math.sqrt(channel)) : (pbr.baseColorFactor || [1, 1, 1]);
-    const diffuse = texture ? `color3f inputs:diffuseColor.connect = <${path}/Image.outputs:rgb>`
+    const diffuse = pbr.baseColorTexture
+      ? `color3f inputs:diffuseColor.connect = <${imageNode('Ink',pbr.baseColorTexture,'sRGB')}.outputs:rgb>`
       : `color3f inputs:diffuseColor = (${color.slice(0, 3).join(',')})`;
-    // USD Preview Surface approximates transmission with opacity. Keep the face clear
-    // and the bevel's reflected strip tight even in viewers without volume rendering.
-    const optical = isClear ? `float inputs:opacity = ${(.055 + .70*pbr.roughnessFactor).toFixed(4)}
+    const response = pbr.metallicRoughnessTexture && imageNode('MetalResponse',pbr.metallicRoughnessTexture,'raw');
+    const sheen = material.extensions?.KHR_materials_specular?.specularColorTexture;
+    const roughness = response ? `float inputs:roughness.connect = <${response}.outputs:g>`
+      : `float inputs:roughness = ${pbr.roughnessFactor}`;
+    // Preview Surface has no thin-film input. Tint the reflected lobe of the
+    // tilted foil microfacets while keeping the diffuse artwork unmodified.
+    const reflectance = sheen ? `int inputs:useSpecularWorkflow = 1
+            color3f inputs:specularColor.connect = <${imageNode('ReflectedSheen',sheen,'sRGB')}.outputs:rgb>`
+      : `float inputs:metallic = ${pbr.metallicFactor}`;
+    const bump = material.normalTexture
+      ? `normal3f inputs:normal.connect = <${imageNode('Grain',material.normalTexture,'raw',true)}.outputs:rgb>` : '';
+    // Apple Preview Surface models glossy transmission with opacity and IOR. On
+    // foil, the registered normal and metal/roughness maps provide moving flashes.
+    const optical = isClear ? `float inputs:opacity = ${(.035 + .88*pbr.roughnessFactor).toFixed(4)}
             float inputs:ior = ${material.extensions.KHR_materials_ior.ior}
-            float inputs:clearcoat = 0.28
+            float inputs:clearcoat = 0.24
             float inputs:clearcoatRoughness = ${pbr.roughnessFactor}` : '';
     return `def Material "${identifier(material.name)}" {
         token outputs:surface.connect = <${path}/Surface.outputs:surface>
         def Shader "Surface" {
             uniform token info:id = "UsdPreviewSurface"
             ${diffuse}
-            float inputs:roughness = ${pbr.roughnessFactor}
-            float inputs:metallic = ${pbr.metallicFactor}
+            ${roughness}
+            ${reflectance}
+            ${bump}
             ${optical}
             token outputs:surface
         }
-        ${texture ? `def Shader "UV" {
+        ${textures.length ? `def Shader "UV" {
             uniform token info:id = "UsdPrimvarReader_float2"
             string inputs:varname = "st"
             float2 outputs:result
         }
-        def Shader "Image" {
-            uniform token info:id = "UsdUVTexture"
-            asset inputs:file = @${texturePath(doc.images[texture.source])}@
-            token inputs:sourceColorSpace = "sRGB"
-            token inputs:wrapS = "clamp"
-            token inputs:wrapT = "clamp"
-            float2 inputs:st.connect = <${path}/UV.outputs:result>
-            float3 outputs:rgb
-        }` : ''}
+        ${textures.join('\n')}` : ''}
     }`;
   }
 
   const decimal = value => Math.round(value * 1e8) / 1e8;
+  async function usdNormalMap(png) {
+    // Flipping st reverses the tangent frame's bitangent. Bake that sign into
+    // the PNG so Apple readers can use the standard [-1,1] normal-map decode.
+    const bitmap=await createImageBitmap(new Blob([png],{type:'image/png'}));
+    const canvas=document.createElement('canvas');
+    canvas.width=bitmap.width;canvas.height=bitmap.height;
+    const context=canvas.getContext('2d');
+    context.drawImage(bitmap,0,0);bitmap.close();
+    const pixels=context.getImageData(0,0,canvas.width,canvas.height);
+    for(let i=1;i<pixels.data.length;i+=4)pixels.data[i]=255-pixels.data[i];
+    context.putImageData(pixels,0,0);
+    const output=await new Promise((resolve,reject)=>canvas.toBlob(blob=>blob?resolve(blob):reject(new Error('The normal map could not be encoded.')),'image/png'));
+    return new Uint8Array(await output.arrayBuffer());
+  }
   function meshText(name, primitive, accessor, material) {
     const positions = accessor(primitive.attributes.POSITION);
     const normals = accessor(primitive.attributes.NORMAL);
@@ -185,9 +224,11 @@ def Xform "Slab" {
 }
 `;
     const entries = [{name: 'Slab.usda', data: encoder.encode(stage)}];
-    for (const image of doc.images) {
+    const normalImages=new Set(doc.materials.filter(m=>m.normalTexture).map(m=>doc.textures[m.normalTexture.index].source));
+    for (const [index,image] of doc.images.entries()) {
       const b = doc.bufferViews[image.bufferView];
-      entries.push({name: texturePath(image), data: new Uint8Array(buffer, binaryStart + b.byteOffset, b.byteLength)});
+      const png=new Uint8Array(buffer,binaryStart+b.byteOffset,b.byteLength);
+      entries.push({name:texturePath(image),data:normalImages.has(index)?await usdNormalMap(png):png});
     }
     return packageFiles(entries);
   }
